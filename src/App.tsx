@@ -5,7 +5,7 @@ import {
 } from '../shared/policy';
 import { createRegionIndex, REGIONS, type RegionData } from '../shared/regions';
 import { api, ApiError, type AppConfig } from './api';
-import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, Logo, PinIcon } from './Art';
+import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, Logo } from './Art';
 import { ageLabel, metaLine, periodLabel, pickedLabel, policyRegionLabel, uniqueTitles, type Picked } from './labels';
 import { connectNative, createAuthCode, haptic, isNativeToss, openExternal, requestAgreement } from './platform';
 
@@ -212,13 +212,13 @@ export default function App() {
       </header>
 
       <main>
-        {/* 지역은 고르지 않아도 돼요. 버튼 하나로 "어디 기준인지"만 보여 주고, 누르면 시·도 → 시·군·구 순서로 골라요. */}
+        {/* 지역은 제목 문장 안에 둬요. 가장 먼저 읽는 줄이라 찾기 쉽고, 줄이 늘지 않아요. */}
         <section className="hero" aria-labelledby="hero-title">
-          <button className="region-button" onClick={openRegion} aria-label={`지역: ${pickedLabel(picked, idx, true)}. 바꾸기`}>
-            <PinIcon /><span>{picked.sido ? regionText : '전국'}</span><Down />
-          </button>
           <h1 id="hero-title">
-            {ready ? <>지금 신청할 수 있는<br />정책 <b className="num">{view.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
+            <button className="region-inline" onClick={openRegion} aria-label={`지역: ${pickedLabel(picked, idx, true)}. 바꾸기`}>
+              {picked.sido ? regionText : '전국'}<Down />
+            </button>에서<br />
+            신청할 수 있는 {ready ? <>정책 <b className="num">{view.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 불러오고 있어요</>}
           </h1>
           {ready && view.fresh > 0 && (
             // 새 정책 수를 누르면 최근 등록순 목록으로 바로 가요.

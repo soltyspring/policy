@@ -29,11 +29,10 @@ ol, ul { list-style: none; }
 h1 { font-size: 26px; line-height: 1.38; font-weight: 700; letter-spacing: -.035em; word-break: keep-all; }
 h1 .num { color: var(--blue-dark); font-variant-numeric: tabular-nums; }
 
-/* ── 지역 버튼: 어디 기준인지 보여 주는 조용한 버튼 ── */
-.region-button { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; max-width: 100%; margin: 0 0 12px -4px; padding: 0 10px 0 8px; border-radius: 12px; font-size: 16px; font-weight: 700; color: var(--grey-800); transition: background .15s; }
-.region-button > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.region-button > svg:first-child { color: var(--grey-700); flex: none; }
-.region-button:active { background: var(--grey-100); }
+/* ── 제목 안 지역 버튼: 문장의 일부처럼 읽히고, 파란 글자와 ▾로 누를 수 있음을 알려요 ── */
+h1 .region-inline { display: inline-flex; align-items: center; gap: 0; min-height: 44px; margin: -6px 0 -6px -6px; padding: 0 0 0 6px; border-radius: 10px; font: inherit; letter-spacing: inherit; color: var(--blue-dark); vertical-align: baseline; transition: background .15s; max-width: calc(100% - 40px); }
+h1 .region-inline .down { width: 22px; height: 22px; flex: none; margin-right: -2px; }
+h1 .region-inline:active { background: var(--blue-pale); }
 .card { background: #fff; margin-top: 12px; padding: 24px 0 8px; border-radius: 24px; }
 .section-title { font-size: 20px; font-weight: 700; padding: 0 24px 8px; }
 
@@ -146,7 +145,7 @@ h1 .num { color: var(--blue-dark); font-variant-numeric: tabular-nums; }
 .detail-block p { margin-top: 6px; font-size: 15px; line-height: 1.6; color: var(--grey-800); word-break: keep-all; overflow-wrap: anywhere; }
 .small { font-size: 13px; color: var(--grey-600); margin-top: 8px; }
 .small.center { text-align: center; }
-.sheet-cta { position: sticky; bottom: calc(-24px - var(--safe-bottom, 0px)); margin: 20px -24px calc(-24px - var(--safe-bottom, 0px)); padding: 12px 24px calc(16px + var(--safe-bottom, 0px)); background: linear-gradient(to top, #fff 80%, rgba(255,255,255,0)); }
+.sheet-cta { position: sticky; bottom: 0; margin: 20px -24px calc(-24px - var(--safe-bottom, 0px)); padding: 12px 24px calc(16px + var(--safe-bottom, 0px)); background: linear-gradient(to top, #fff 80%, rgba(255,255,255,0)); }
 .sheet-cta .cta { margin-top: 0; }
 .sheet-cta .small { margin-top: 8px; }
 
@@ -174,7 +173,7 @@ h1 .num { color: var(--blue-dark); font-variant-numeric: tabular-nums; }
   .cta.weak:hover { background: #d6e8ff; }
   .pill-button:hover { background: #d6e8ff; }
   .more-button:hover { background: var(--grey-200); }
-  .region-button:hover { background: var(--grey-100); }
+  h1 .region-inline:hover { background: var(--blue-pale); }
   .more-button.weak:hover { background: var(--grey-100); }
   .chips button:not(.on):hover, .region-picker .grid button:not(.on):hover { background: var(--grey-200); }
 }
