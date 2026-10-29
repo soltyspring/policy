@@ -90,6 +90,37 @@ export function createRegionIndex(data: RegionData = REGIONS) {
     return { sido, sgg: ambiguous.length === 1 ? ambiguous[0] : null, ambiguous: ambiguous.length > 1 ? ambiguous : [] };
   }
 
-  return { data, sidoByCode, byCode, resolveSgg, currentSidoCode, parseAddress, sidoOfName };
+  /**
+   * 입력한 글자로 시·도·시·군·구를 바로 찾아요(서버 없이). "강남구", "수원", "광주", "전남광주 북구" 모두 돼요.
+   * 주소 API는 "강남구"처럼 구 이름만 넣으면 찾지 못해서, 이름 검색은 여기서 해요.
+   */
+  function searchRegions(input: string, limit = 8): { sido: Sido; sgg: Sgg | null; gu?: string }[] {
+    const q = input.replace(/\s+/g, '');
+    if (q.length < 1) return [];
+    const out: { sido: Sido; sgg: Sgg | null; gu?: string; score: number }[] = [];
+    const aliasSido = sidoOfName(q);
+    for (const sido of data.sido) {
+      const sidoNames = [sido.name, sido.short, ...Object.entries(SIDO_ALIASES).filter(([, v]) => v === sido.name).map(([k]) => k)];
+      const sidoHit = aliasSido === sido ? 0 : sidoNames.some(n => n.startsWith(q)) ? 1 : -1;
+      if (sidoHit >= 0) out.push({ sido, sgg: null, score: sidoHit });
+      for (const sgg of sido.sgg) {
+        if (sido.code === '36') continue;
+        const names = [sgg.name, sgg.name.replace(/(시|군|구)$/, '')];
+        const combos = sidoNames.flatMap(s => names.map(n => `${s}${n}`));
+        let score = names.includes(q) || combos.includes(q) ? 2 : names.some(n => n.startsWith(q)) || combos.some(c => c.startsWith(q)) ? 3 : -1;
+        let gu: string | undefined;
+        // 일반구 이름("장안구", "포항 북구")으로 찾으면 어느 구인지 함께 보여 줘요.
+        if (score < 0) for (const g of sgg.gu ?? []) {
+          const guNames = [g, `${sgg.name}${g}`, `${sgg.name.replace(/시$/, '')}${g}`];
+          if (guNames.includes(q)) { score = 2; gu = g; break; }
+          if (q.length >= 2 && guNames.some(n => n.startsWith(q))) { score = 3; gu = g; break; }
+        }
+        if (score >= 0 && !(q.length < 2 && score > 2)) out.push({ sido, sgg, gu, score });
+      }
+    }
+    return out.sort((a, b) => a.score - b.score || (a.gu ? 1 : 0) - (b.gu ? 1 : 0)).slice(0, limit).map(({ sido, sgg, gu }) => ({ sido, sgg, gu }));
+  }
+
+  return { data, sidoByCode, byCode, resolveSgg, currentSidoCode, parseAddress, sidoOfName, searchRegions };
 }
 export type RegionIndex = ReturnType<typeof createRegionIndex>;

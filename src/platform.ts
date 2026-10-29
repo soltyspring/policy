@@ -30,32 +30,6 @@ export function haptic(type: 'success' | 'tap' | 'error') {
   try { void Device.triggerHaptic({ type }); } catch { /* 지원하지 않는 버전 */ }
 }
 
-/** 토스에 등록된 주소를 쓸 수 있는지. 콘솔 동의 항목 키가 있어야 해요. */
-export const canLoadAddress = () => import.meta.env.DEV || (isNativeToss() && !!import.meta.env.VITE_TOSS_ADDRESS_KEY);
-
-export type AddressResult = { ok: true; address: string } | { ok: false; reason: 'unsupported' | 'declined' | 'not-ready' | 'empty' | 'error' };
-
-/**
- * 토스에 등록된 주소를 동의를 받고 가져와요. 주소는 기기 안에서 지역 코드로만 바꿔요.
- * 브라우저 개발 환경에서는 옛 주소 예시를 돌려줘서 통합 전 이름도 잘 바뀌는지 확인해요.
- */
-export async function loadTossAddress(): Promise<AddressResult> {
-  if (!isNativeToss()) return import.meta.env.DEV ? { ok: true, address: '광주광역시 북구 용봉로 77' } : { ok: false, reason: 'unsupported' };
-  const key = import.meta.env.VITE_TOSS_ADDRESS_KEY as string | undefined;
-  if (!key) return { ok: false, reason: 'not-ready' };
-  try { if (!User.getConsentedData.isSupported()) return { ok: false, reason: 'unsupported' }; } catch { return { ok: false, reason: 'unsupported' }; }
-  try {
-    const data = await User.getConsentedData({ consentedUserDataKey: key, shouldRequestAgreementWhenUserDeclined: true });
-    const address = data?.USER_ADDRESS_BASE || data?.USER_ADDRESS;
-    return address ? { ok: true, address } : { ok: false, reason: 'empty' };
-  } catch (e) {
-    const code = String((e as { code?: string })?.code ?? (e as Error)?.message ?? '');
-    if (/DECLINED|CANCELED/i.test(code)) return { ok: false, reason: 'declined' };
-    if (/TERMS_NOT_SET/i.test(code)) return { ok: false, reason: 'not-ready' };
-    return { ok: false, reason: 'error' };
-  }
-}
-
 export type AgreementResult = 'agreed' | 'rejected' | 'unsupported' | 'not-ready' | 'error';
 
 /** 토스 알림 동의문을 띄워요. 브라우저 개발 환경에서는 동의한 것으로 처리해요. */

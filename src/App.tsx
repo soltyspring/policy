@@ -3,11 +3,11 @@ import {
   applyLabel, applyState, daysLeft, FIELD_LABELS, FIELDS, SORT_KEYS, SORT_LABELS, SOURCE_LABELS,
   type Field, type Policy, type SortKey, type SubscriptionState,
 } from '../shared/policy';
-import { createRegionIndex, REGIONS, type RegionData, type Sido } from '../shared/regions';
-import { api, ApiError, type AppConfig, type ListResponse } from './api';
-import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, HeroArt, LocateIcon, Logo, PinIcon, StepIcon } from './Art';
+import { createRegionIndex, REGIONS, type RegionData, type RegionIndex, type Sido } from '../shared/regions';
+import { api, ApiError, type AddressHit, type AppConfig, type ListResponse } from './api';
+import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, HeroArt, Logo, PinIcon, SearchIcon, StepIcon } from './Art';
 import { ageLabel, metaLine, periodLabel, pickedLabel, policyRegionLabel, uniqueTitles, type Picked } from './labels';
-import { canLoadAddress, connectNative, createAuthCode, haptic, isNativeToss, loadTossAddress, openExternal, requestAgreement, shareApp } from './platform';
+import { connectNative, createAuthCode, haptic, isNativeToss, openExternal, requestAgreement, shareApp } from './platform';
 
 /** 새 정책 알림 캠페인 발송 코드. 동의 화면을 띄울 때도 이 코드를 써요. */
 const NEW_TEMPLATE = import.meta.env.VITE_TOSS_NEW_TEMPLATE as string | undefined;
@@ -52,7 +52,6 @@ export default function App() {
   const [listError, setListError] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [locating, setLocating] = useState(false);
   const [sub, setSub] = useState<SubscriptionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -66,7 +65,7 @@ export default function App() {
   const showToast = useCallback((text: string) => { setToast(text); window.setTimeout(() => setToast(t => (t === text ? null : t)), 2800); }, []);
 
   useEffect(() => {
-    api.config().then(setConfig).catch(() => setConfig({ notify: false, intervalHours: 6, locate: false }));
+    api.config().then(setConfig).catch(() => setConfig({ notify: false, intervalHours: 6, address: false }));
     api.regions().then(d => { if (Array.isArray(d?.sido) && d.sido.length >= 10) setRegionData(d); }).catch(() => { /* 함께 배포한 목록을 써요 */ });
     const off = connectNative(() => { if (sheetRef.current) { setSheet(null); return true; } return false; });
     return off;
@@ -101,34 +100,10 @@ export default function App() {
   function choose(next: Picked, message?: string) {
     setPicked(next);
     setSheet(null);
+    haptic('success');
     if (message) showToast(message);
   }
-
-  /** 토스 주소 → 지역. 기기 안에서 먼저 찾고, 못 찾으면(나뉜 옛 구 등) 서버에 기본 주소만 보내 확인해요. */
-  async function locateByAddress() {
-    if (locating) return;
-    setLocating(true);
-    try {
-      const r = await loadTossAddress();
-      if (!r.ok) {
-        showToast(r.reason === 'declined' ? '주소를 쓰려면 동의가 필요해요'
-          : r.reason === 'unsupported' ? (isNativeToss() ? '토스 앱을 최신 버전으로 업데이트해 주세요' : '토스 앱에서 쓸 수 있어요')
-          : r.reason === 'empty' ? '토스에 등록된 주소가 없어요. 직접 골라 주세요'
-          : r.reason === 'not-ready' ? '주소 불러오기를 준비하고 있어요. 직접 골라 주세요' : '주소를 불러오지 못했어요. 직접 골라 주세요');
-        return;
-      }
-      const parsed = idx.parseAddress(r.address);
-      if (parsed?.sgg) { haptic('success'); choose({ sido: parsed.sido.code, sgg: parsed.sgg.code }, `${pickedLabel({ sido: parsed.sido.code, sgg: parsed.sgg.code }, idx)} 정책을 보여 드릴게요`); return; }
-      try {
-        const found = await api.locate(r.address.split(/\s+/).slice(0, 5).join(' '));
-        haptic('success');
-        choose({ sido: found.sido, sgg: found.sgg }, `${pickedLabel(found, idx)} 정책을 보여 드릴게요`);
-      } catch {
-        if (parsed) { choose({ sido: parsed.sido.code, sgg: null }, '시·군·구를 골라 주세요'); setSheet({ type: 'region' }); }
-        else showToast('주소로 지역을 찾지 못했어요. 직접 골라 주세요');
-      }
-    } finally { setLocating(false); }
-  }
+  const pickAndTell = (p: Picked) => choose(p, `${pickedLabel(p, idx)} 정책을 보여 드릴게요`);
 
   // ── 새 정책 알림(콘솔 캠페인 승인 뒤 서버 NOTIFY_ENABLED로 켜요) ──
   async function ensureSession() {
@@ -189,24 +164,30 @@ export default function App() {
       </header>
 
       <main>
-        <section className="hero" aria-labelledby="hero-title">
-          <button className="region-chip" onClick={() => setSheet({ type: 'region' })} aria-label={`지역: ${pickedLabel(picked, idx, true)}. 바꾸기`}>
-            <PinIcon /><span>{picked.sido ? regionText : '모든 지역'}</span><Down />
-          </button>
-          <HeroArt />
-          <h1 id="hero-title">
-            {list ? <>지금 신청할 수 있는<br />정책 <b className="num">{list.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
-          </h1>
-          <p className="hero-sub">
-            {list && list.fresh > 0 ? `이번 주 새로 올라온 정책 ${list.fresh}개`
-              : '정부와 지자체 혜택을 한곳에 모았어요'}
-          </p>
-          {canLoadAddress() && (
-            <button className="locate-button" onClick={() => void locateByAddress()} disabled={locating} aria-busy={locating}>
-              <LocateIcon />{locating ? '주소 확인 중' : '내 주소로 지역 찾기'}
-            </button>
-          )}
-        </section>
+        {picked.sido ? (
+          <section className="hero" aria-labelledby="hero-title">
+            <div className="town">
+              <span className="town-pin" aria-hidden="true"><PinIcon /></span>
+              <strong className="town-name">{regionText}</strong>
+              <button className="town-change" onClick={() => setSheet({ type: 'region' })} aria-label={`동네 바꾸기 (지금 ${pickedLabel(picked, idx, true)})`}>동네 바꾸기</button>
+            </div>
+            <HeroArt />
+            <h1 id="hero-title">
+              {list ? <>지금 신청할 수 있는<br />정책 <b className="num">{list.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
+            </h1>
+            <p className="hero-sub">
+              {list && list.fresh > 0 ? `이번 주 새로 올라온 정책 ${list.fresh}개` : '정부와 지자체 혜택을 한곳에 모았어요'}
+            </p>
+          </section>
+        ) : (
+          <section className="hero finder-hero" aria-labelledby="hero-title">
+            <HeroArt />
+            <h1 id="hero-title">사는 동네를<br />알려 주세요</h1>
+            <p className="hero-sub">{list ? `전국 혜택 ${list.open.toLocaleString('ko-KR')}개 중 우리 동네 것만 골라 드려요` : '우리 동네에서 받을 수 있는 혜택만 골라 드려요'}</p>
+            <NeighborhoodFinder idx={idx} addressSearch={!!config?.address} onPick={pickAndTell} />
+            <button className="text-button list-pick" onClick={() => setSheet({ type: 'region' })}>시·도 목록에서 고르기</button>
+          </section>
+        )}
 
         <section className="card filters" aria-label="정책 조건">
           <div className="segmented" role="group" aria-label="대상">
@@ -305,8 +286,7 @@ export default function App() {
       {sheet?.type === 'policy' && <Sheet title={sheet.policy.title} onClose={() => setSheet(null)}><PolicyDetail policy={sheet.policy} region={policyRegionLabel(sheet.policy, idx)} /></Sheet>}
       {sheet?.type === 'region' && (
         <Sheet title="지역 고르기" onClose={() => setSheet(null)}>
-          <RegionPicker data={regionData} picked={picked} locating={locating} onLocate={canLoadAddress() ? () => void locateByAddress() : undefined}
-            onPick={p => choose(p)} />
+          <RegionPicker data={regionData} idx={idx} picked={picked} addressSearch={!!config?.address} onPick={p => choose(p)} onFound={pickAndTell} />
         </Sheet>
       )}
       {sheet?.type === 'sort' && (
@@ -399,7 +379,7 @@ function PolicyDetail({ policy, region }: { policy: Policy; region: string }) {
   );
 }
 
-function RegionPicker({ data, picked, onPick, onLocate, locating }: { data: RegionData; picked: Picked; onPick: (p: Picked) => void; onLocate?: () => void; locating: boolean }) {
+function RegionPicker({ data, idx, picked, addressSearch, onPick, onFound }: { data: RegionData; idx: RegionIndex; picked: Picked; addressSearch: boolean; onPick: (p: Picked) => void; onFound: (p: Picked) => void }) {
   const [sido, setSido] = useState<Sido | null>(() => data.sido.find(s => s.code === picked.sido) ?? null);
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (sido) listRef.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true }); }, [sido]);
@@ -419,8 +399,8 @@ function RegionPicker({ data, picked, onPick, onLocate, locating }: { data: Regi
   }
   return (
     <div className="region-picker">
-      <h2 className="detail-title">어느 지역 정책을 볼까요?</h2>
-      {onLocate && <button className="cta weak full locate-in-sheet" onClick={onLocate} disabled={locating} aria-busy={locating}><LocateIcon />{locating ? '주소 확인 중' : '내 주소로 찾기'}</button>}
+      <h2 className="detail-title">어느 동네 정책을 볼까요?</h2>
+      <NeighborhoodFinder idx={idx} addressSearch={addressSearch} onPick={onFound} compact />
       <div className="grid" role="group" aria-label="시·도">
         <button className={!picked.sido ? 'on' : ''} aria-pressed={!picked.sido} onClick={() => onPick({ sido: null, sgg: null })}>모든 지역</button>
         {data.sido.map(s => (
@@ -429,6 +409,64 @@ function RegionPicker({ data, picked, onPick, onLocate, locating }: { data: Regi
         ))}
       </div>
       <p className="small">{data.updatedAt} 주소 체계 기준이에요</p>
+    </div>
+  );
+}
+
+interface FinderHit { key: string; pick: Picked; title: string; sub: string }
+
+/**
+ * 동네 찾기 입력창. 사용자가 직접 입력해서 동의 화면이 필요 없어요.
+ * - 시·군·구 이름("강남구", "수원", "광주")은 기기 안에서 바로 찾아요.
+ * - 동 이름·도로명("용봉동", "테헤란로")은 도로명주소 API로 찾아요. 입력한 글자는 저장하지 않아요.
+ */
+function NeighborhoodFinder({ idx, addressSearch, onPick, compact = false }: { idx: RegionIndex; addressSearch: boolean; onPick: (p: Picked) => void; compact?: boolean }) {
+  const [q, setQ] = useState('');
+  const [remote, setRemote] = useState<AddressHit[]>([]);
+  const [searching, setSearching] = useState(false);
+  const term = q.trim();
+  useEffect(() => {
+    setRemote([]);
+    if (!addressSearch || term.length < 2) { setSearching(false); return; }
+    const ctrl = new AbortController();
+    setSearching(true);
+    const t = window.setTimeout(() => {
+      api.address(term, ctrl.signal).then(r => setRemote(r.items ?? [])).catch(() => setRemote([])).finally(() => { if (!ctrl.signal.aborted) setSearching(false); });
+    }, 300);
+    return () => { window.clearTimeout(t); ctrl.abort(); };
+  }, [term, addressSearch]);
+
+  const hits = useMemo<FinderHit[]>(() => {
+    if (!term) return [];
+    const local: FinderHit[] = idx.searchRegions(term, 6).map(r => ({
+      key: `l-${r.sido.code}-${r.sgg?.code ?? ''}`,
+      pick: { sido: r.sido.code, sgg: r.sgg?.code ?? null },
+      title: r.sgg ? `${r.sido.short} ${r.sgg.name}${r.gu ? ` ${r.gu}` : ''}` : r.sido.code === '36' ? r.sido.short : `${r.sido.short} 전체`,
+      sub: r.gu ? `${r.sgg!.name} 전체 정책을 보여 드려요` : r.sgg ? r.sido.name : '시·도 전체',
+    }));
+    const seen = new Set(local.map(h => h.title));
+    const fromAddress: FinderHit[] = remote.filter(h => !seen.has(h.label)).map(h => ({ key: `a-${h.label}`, pick: { sido: h.sido, sgg: h.sgg }, title: h.label, sub: '주소에서 찾았어요' }));
+    return [...local, ...fromAddress].slice(0, 8);
+  }, [term, remote, idx]);
+
+  return (
+    <div className={`finder ${compact ? 'compact' : ''}`}>
+      <label className="search-box">
+        <SearchIcon />
+        <span className="sr-only">동네 찾기</span>
+        <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={addressSearch ? '동 이름, 도로명, 구 이름 (예: 용봉동)' : '시·군·구 이름 (예: 강남구)'}
+          maxLength={40} autoComplete="off" enterKeyHint="search" onKeyDown={e => { if (e.key === 'Enter' && hits[0]) onPick(hits[0].pick); }} />
+      </label>
+      <p className="sr-only" aria-live="polite">{term ? (hits.length ? `${hits.length}곳을 찾았어요` : searching ? '찾는 중' : '찾는 동네가 없어요') : ''}</p>
+      {term && (
+        <ul className="finder-results">
+          {hits.map(h => (
+            <li key={h.key}><button onClick={() => onPick(h.pick)}><PinIcon /><span><strong>{h.title}</strong><span>{h.sub}</span></span></button></li>
+          ))}
+          {!hits.length && !searching && <li className="finder-empty">찾는 동네가 없어요. 동 이름이나 도로명으로 찾아보세요</li>}
+          {searching && !hits.length && <li className="finder-empty">찾고 있어요</li>}
+        </ul>
+      )}
     </div>
   );
 }
@@ -468,7 +506,7 @@ function Doc({ kind }: { kind: 'terms' | 'privacy' }) {
       ['변경과 문의', '서비스 내용이 바뀌거나 중단될 수 있으며 중요한 변경은 시행 7일 전에 앱에서 알려 드려요. 문의: bluecl@bluecl.cloud'],
     ],
     privacy: [
-      ['수집하는 정보', '고른 지역은 이 기기에만 저장해요. "내 주소로 찾기"를 누르면 동의를 받고 토스에 등록된 주소를 불러와 지역을 찾는 데만 쓰며, 주소를 저장하지 않아요. 기기 안에서 지역을 정하지 못하면 기본 주소만 서버로 보내 행정구역을 확인하고 바로 버려요.'],
+      ['수집하는 정보', '고른 동네는 이 기기에만 저장해요. 동네 찾기에 동 이름이나 도로명을 입력하면 행정구역을 찾으려고 그 글자만 서버를 거쳐 행정안전부 도로명주소 API에 보내고, 저장하지 않아요. 토스 계정 정보는 받지 않아요.'],
       ['알림을 받을 때', '새 정책 알림을 켜면 토스가 이 미니앱 전용으로 발급하는 사용자 식별키와 알림 지역을 저장해요. 이름·전화번호는 받지 않아요.'],
       ['보관 기간', '알림을 끄면 발송 대상에서 바로 빼고 30일 안에 식별키를 지워요. 서버 접속 기록은 14일 뒤 지워요.'],
       ['문의', '열람·삭제 요청은 bluecl@bluecl.cloud로 보내 주세요.'],

@@ -66,7 +66,7 @@ export function createApp(o: AppOptions) {
 
   app.get('/api/health', noStore, (_req, res) => res.json({ ok: true }));
 
-  app.get('/api/config', noStore, (_req, res) => res.json({ notify: !!o.notifyEnabled, intervalHours: o.intervalHours ?? 6, locate: !!o.jusoKey }));
+  app.get('/api/config', noStore, (_req, res) => res.json({ notify: !!o.notifyEnabled, intervalHours: o.intervalHours ?? 6, address: !!o.jusoKey }));
 
   app.get('/api/regions', shortCache, (_req, res) => res.json(o.regions().data));
 
@@ -99,23 +99,34 @@ export function createApp(o: AppOptions) {
   });
 
   /**
-   * 주소 → 지금 시·도·시·군·구 코드. 앱이 토스 주소만으로 지역을 정하지 못했을 때만 불러요.
-   * 주소는 기록하지 않고 코드만 돌려줘요.
+   * 사용자가 입력한 동네 이름·도로명 → 지역 후보(최대 6개). 주소는 기록하지 않고 후보만 돌려줘요.
+   * 예: "용봉동" → 전남광주 북구 용봉동, "테헤란로" → 서울 강남구 역삼동·대치동
    */
-  app.get('/api/locate', rateLimit(30, 60_000), noStore, async (req, res) => {
-    const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 80) : '';
-    if (!o.jusoKey) return res.status(503).json({ code: 'LOCATE_UNAVAILABLE', error: '지역을 직접 골라 주세요.' });
-    if (q.trim().length < 2) return res.status(400).json({ code: 'BAD_REQUEST', error: '주소를 확인해 주세요.' });
+  app.get('/api/address', rateLimit(40, 60_000), noStore, async (req, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 60) : '';
+    if (!o.jusoKey) return res.status(503).json({ code: 'ADDRESS_UNAVAILABLE', error: '지역 이름으로 찾아 주세요.' });
+    if (q.trim().length < 2) return res.json({ items: [] });
     try {
-      const { items } = await jusoSearch(o.jusoKey, q, 1, o.fetchImpl);
-      const hit = items[0];
+      const { items } = await jusoSearch(o.jusoKey, q, 30, o.fetchImpl);
       const regions = o.regions();
-      const sgg = hit ? regions.resolveSgg(hit.admCd.slice(0, 5))[0] : undefined;
-      const sido = hit ? regions.currentSidoCode(hit.admCd.slice(0, 2)) : null;
-      if (!sido) return res.status(404).json({ code: 'NOT_FOUND', error: '주소로 지역을 찾지 못했어요. 직접 골라 주세요.' });
-      res.json({ sido, sgg: sgg ?? null });
-    } catch {
-      res.status(404).json({ code: 'NOT_FOUND', error: '주소로 지역을 찾지 못했어요. 직접 골라 주세요.' });
+      const seen = new Set<string>();
+      const out: { sido: string; sgg: string | null; label: string }[] = [];
+      for (const it of items) {
+        const sido = regions.currentSidoCode(it.admCd.slice(0, 2));
+        if (!sido) continue;
+        const sgg = regions.resolveSgg(it.admCd.slice(0, 5))[0] ?? null;
+        const s = regions.sidoByCode.get(sido)!;
+        const g = sgg ? s.sgg.find(x => x.code === sgg) : undefined;
+        const label = [s.short, g && s.code !== '36' ? g.name : null, it.emdNm].filter(Boolean).join(' ');
+        if (seen.has(label)) continue;
+        seen.add(label);
+        out.push({ sido, sgg, label });
+        if (out.length >= 6) break;
+      }
+      res.json({ items: out });
+    } catch (e) {
+      // "강남구"처럼 너무 짧으면 주소 API가 거절해요(E0006). 앱은 이름 검색 결과만 보여 줘요.
+      res.json({ items: [], hint: (e as { code?: string }).code === 'JUSO_E0006' ? 'detail' : 'error' });
     }
   });
 

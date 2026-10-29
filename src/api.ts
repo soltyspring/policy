@@ -28,7 +28,8 @@ async function call<T>(path: string, init: RequestInit = {}, auth = false): Prom
 }
 
 export type ListResponse = PolicyListResponse & { open: number };
-export interface AppConfig { notify: boolean; intervalHours: number; locate: boolean }
+export interface AppConfig { notify: boolean; intervalHours: number; address: boolean }
+export interface AddressHit { sido: string; sgg: string | null; label: string }
 
 export function queryString(q: PolicyQuery & { offset?: number; limit?: number }) {
   const p = new URLSearchParams();
@@ -52,7 +53,7 @@ export const api = {
   regions: () => call<RegionData>('/api/regions'),
   policies: (q: PolicyQuery & { offset?: number; limit?: number }, signal?: AbortSignal) => call<ListResponse>(`/api/policies?${queryString(q)}`, { signal }),
   policy: (id: string) => call<Policy>(`/api/policies/${encodeURIComponent(id)}`),
-  locate: (q: string) => call<{ sido: string; sgg: string | null }>(`/api/locate?q=${encodeURIComponent(q)}`),
+  address: (q: string, signal?: AbortSignal) => call<{ items: AddressHit[] }>(`/api/address?q=${encodeURIComponent(q)}`, { signal }),
   async connect(code: string) {
     const r = await call<{ token: string; subscription: SubscriptionState }>('/api/session', { method: 'POST', body: JSON.stringify({ code }) });
     localStorage.setItem(TOKEN_KEY, r.token);
