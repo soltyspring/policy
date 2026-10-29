@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  applyLabel, applyState, daysLeft, FIELD_LABELS, FIELDS, filterPolicies, freshCount, fromLiteRows, kstDate, SORT_KEYS, SORT_LABELS, sortPolicies, SOURCE_LABELS,
+  applyLabel, applyState, daysLeft, FIELD_LABELS, FIELDS, filterPolicies, freshCount, fromLiteRows, kstDate, SORT_KEYS, SORT_LABELS, sortPolicies,
   type Field, type Policy, type PolicyIndexResponse, type PolicyLite, type SortKey, type SourceStatus, type SubscriptionState,
 } from '../shared/policy';
 import { createRegionIndex, REGIONS, type RegionData } from '../shared/regions';
 import { api, ApiError, type AppConfig } from './api';
-import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, Logo, PinIcon, StepIcon } from './Art';
+import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, Logo, PinIcon } from './Art';
 import { ageLabel, metaLine, periodLabel, pickedLabel, policyRegionLabel, uniqueTitles, type Picked } from './labels';
-import { connectNative, createAuthCode, haptic, isNativeToss, openExternal, requestAgreement, shareApp } from './platform';
+import { connectNative, createAuthCode, haptic, isNativeToss, openExternal, requestAgreement } from './platform';
 
 /** 새 정책 알림 캠페인 발송 코드. 동의 화면을 띄울 때도 이 코드를 써요. */
 const NEW_TEMPLATE = import.meta.env.VITE_TOSS_NEW_TEMPLATE as string | undefined;
 const RECENT_LIMIT = 3;
 const PAGE = 20;
 const REGION_KEY = 'policy:region:v1';
-/** 목록 제목은 첫 화면 개수와 겹치지 않게 정렬 기준을 말해요. */
-const LIST_TITLES: Record<SortKey, string> = { deadline: '마감이 가까운 정책', recent: '새로 올라온 정책', popular: '많이 본 정책', name: '가나다순 정책' };
 
 type SheetKind =
   | { type: 'policy'; policy: PolicyLite }
@@ -156,7 +154,7 @@ export default function App() {
   /** 새 정책 수를 누르면 최근 등록순으로 바꾸고 목록으로 내려가요. */
   function showFresh() {
     setSort('recent');
-    document.getElementById('list-title')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    document.querySelector('.list-card')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   }
 
   // ── 새 정책 알림(콘솔 캠페인 승인 뒤 서버 NOTIFY_ENABLED로 켜요) ──
@@ -198,11 +196,6 @@ export default function App() {
     catch (e) { if (e instanceof ApiError && e.status === 401) { setSub(null); setSheet(null); } showToast('저장하지 못했어요. 다시 시도해 주세요'); }
   }
 
-  async function share() {
-    const native = isNativeToss() || typeof navigator.share === 'function';
-    showToast((await shareApp()) ? (native ? '공유했어요' : '소개 문구를 복사했어요') : '공유하지 못했어요');
-  }
-
   const total = view.sorted.length;
   const visible = view.sorted.slice(0, shown || RECENT_LIMIT);
   const titles = useMemo(() => uniqueTitles(visible, idx), [visible, idx]);
@@ -227,24 +220,18 @@ export default function App() {
           <h1 id="hero-title">
             {ready ? <>지금 신청할 수 있는<br />정책 <b className="num">{view.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
           </h1>
-          {ready && view.fresh > 0 ? (
+          {ready && view.fresh > 0 && (
             // 새 정책 수를 누르면 최근 등록순 목록으로 바로 가요.
             <button className="fresh-link" onClick={showFresh}>이번 주 새로 올라온 정책 {view.fresh}개<Chevron /></button>
-          ) : (
-            <p className="hero-sub">정부와 지자체 혜택을 한곳에 모았어요</p>
           )}
         </section>
 
         <section className="card list-card" aria-labelledby="list-title">
-          {/* 정렬과 조건은 그 조건이 바꾸는 목록 바로 위에 둬요. */}
-          <div className="list-head">
-            <h2 id="list-title" className="section-title">{LIST_TITLES[sort]}</h2>
-            <button className="sort-button" onClick={() => setSheet({ type: 'sort' })} aria-label={`정렬: ${SORT_LABELS[sort]}. 바꾸기`}>
-              {SORT_LABELS[sort]}<Down />
-            </button>
-          </div>
+          <h2 id="list-title" className="sr-only">정책 목록 · {SORT_LABELS[sort]}</h2>
+          {/* 정렬은 칩 줄 맨 앞에 둬요. 정렬·분야·조건이 모두 목록 바로 위에 있어요. */}
           <div className="chips" role="group" aria-label="분야">
-            <button aria-pressed={!field} className={!field ? 'on' : ''} onClick={() => setField(undefined)}>전체 분야</button>
+            <button className="sort-chip" onClick={() => setSheet({ type: 'sort' })} aria-label={`정렬: ${SORT_LABELS[sort]}. 바꾸기`}>{SORT_LABELS[sort]}<Down /></button>
+            <button aria-pressed={!field} className={!field ? 'on' : ''} onClick={() => setField(undefined)}>전체</button>
             {FIELDS.map(f => <button key={f} aria-pressed={field === f} className={field === f ? 'on' : ''} onClick={() => setField(field === f ? undefined : f)}>{FIELD_LABELS[f]}</button>)}
           </div>
           <div className="checks" role="group" aria-label="조건">
@@ -254,7 +241,7 @@ export default function App() {
           </div>
           {!ready && !listError && <div className="skeleton-list" aria-label="불러오는 중"><span /><span /><span /></div>}
           {listError && !ready && <div className="empty"><EmptyArt /><p>정책을 불러오지 못했어요</p><button className="text-button" onClick={() => void loadIndex()}>다시 불러오기</button></div>}
-          {noData && <div className="empty"><EmptyArt /><p>정책을 준비하고 있어요</p><span className="small">곧 채워질 거예요. 잠시 후 다시 확인해 주세요</span></div>}
+          {noData && <div className="empty"><EmptyArt /><p>정책을 준비하고 있어요</p></div>}
           {ready && !noData && total === 0 && (
             <div className="empty"><EmptyArt /><p>조건에 맞는 정책이 없어요</p><button className="text-button" onClick={resetFilters}>조건 풀기</button></div>
           )}
@@ -276,22 +263,8 @@ export default function App() {
           )}
         </section>
 
-        <section className="card" aria-labelledby="how-title">
-          <h2 id="how-title" className="section-title">이렇게 모아요</h2>
-          <ol className="steps">
-            <Step icon="source" title="공식 데이터만 써요" text="정부24 공공서비스 공공데이터를 모아요." />
-            <Step icon="refresh" title={`${config?.intervalHours ?? 6}시간마다 새로 확인해요`} text="마감된 정책은 따로 표시해요." />
-            <Step icon="apply" title="신청은 공식 페이지에서 해요" text="조건과 서류는 담당 기관 안내를 따라요." />
-          </ol>
-        </section>
-
-        <section className="card share-card">
-          <div><strong>이 지역에 사는 친구가 있나요?</strong><span>받을 수 있는 혜택을 같이 찾아봐요</span></div>
-          <button className="pill-button" onClick={() => void share()}>공유하기</button>
-        </section>
-
         <footer className="footer">
-          <p>동네 정책 찾기는 정부·지자체와 관련 없는 개인 서비스예요. 실제 지원 조건과 신청 방법은 담당 기관의 공식 안내를 확인해 주세요.</p>
+          <p>정부·지자체와 관련 없는 개인 서비스예요. 신청 전에 공식 안내를 확인해 주세요.</p>
           <p className="sources">자료: {sourceCredit(index)}{index?.updatedAt ? ` · ${new Date(index.updatedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric' })} 기준` : ''}</p>
           <p className="footer-links">
             <button onClick={() => setSheet({ type: 'doc', kind: 'terms' })}>이용약관</button>
@@ -315,12 +288,11 @@ export default function App() {
       {sheet?.type === 'region' && (
         <Sheet title="지역 고르기" onClose={() => setSheet(null)}>
           <RegionPicker data={regionData} picked={picked} sido={sheet.sido} onSido={code => setSheet({ type: 'region', sido: code })}
-            onPick={p => choose(p, p.sido ? `${pickedLabel(p, idx)} 정책을 보여 드릴게요` : '전국 정책을 보여 드릴게요')} />
+            onPick={p => choose(p)} />
         </Sheet>
       )}
       {sheet?.type === 'sort' && (
         <Sheet title="정렬" onClose={() => setSheet(null)}>
-          <h2 className="detail-title">어떤 순서로 볼까요?</h2>
           <div className="radio-list" role="radiogroup" aria-label="정렬">
             {SORT_KEYS.map(k => (
               <button key={k} role="radio" aria-checked={sort === k} className={sort === k ? 'on' : ''} onClick={() => { setSort(k); setSheet(null); }}>
@@ -408,7 +380,6 @@ function PolicyDetail({ policy, region }: { policy: PolicyLite; region: string }
   return (
     <div className="detail">
       <div className="badges">
-        <span className={`badge ${policy.source}`}>{SOURCE_LABELS[policy.source]}</span>
         <span className="badge plain">{FIELD_LABELS[policy.field]}</span>
         <span className={`badge state-${applyState(policy)}`}>{applyLabel(policy)}</span>
       </div>
@@ -429,7 +400,6 @@ function PolicyDetail({ policy, region }: { policy: PolicyLite; region: string }
         <button className="cta full" disabled={!full} aria-busy={!full && !failed} onClick={() => full && void openExternal(full.url)}>
           {full || failed ? '공식 페이지에서 확인하기' : <span className="spinner" aria-label="불러오는 중" />}
         </button>
-        <p className="small center">조건과 서류는 공식 페이지에서 꼭 확인해 주세요</p>
       </div>
     </div>
   );
@@ -465,7 +435,7 @@ function RegionPicker({ data, picked, sido: sidoCode, onSido, onPick }: { data: 
   }
   return (
     <div className="region-picker">
-      <h2 className="detail-title">어느 지역 정책을 볼까요?</h2>
+      <h2 className="detail-title">지역</h2>
       <div className="grid" ref={listRef} role="group" aria-label="시·도">
         <button className={!picked.sido ? 'on' : ''} aria-pressed={!picked.sido} onClick={() => onPick({ sido: null, sgg: null })}>전국</button>
         {data.sido.map(s => (
@@ -473,14 +443,9 @@ function RegionPicker({ data, picked, sido: sidoCode, onSido, onPick }: { data: 
             onClick={() => (s.code === '36' ? onPick({ sido: s.code, sgg: null }) : onSido(s.code))}>{s.short}</button>
         ))}
       </div>
-      <p className="small">{data.updatedAt} 행정구역 기준이에요</p>
     </div>
   );
 }
-function Step({ icon, title, text }: { icon: 'source' | 'refresh' | 'apply'; title: string; text: string }) {
-  return <li className="step"><StepIcon kind={icon} /><span><strong>{title}</strong><span>{text}</span></span></li>;
-}
-
 function Sheet({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   // 시트를 연 버튼을 처음 렌더할 때 한 번만 기억해요(StrictMode에서 effect가 두 번 돌아도 안전).

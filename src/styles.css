@@ -26,10 +26,8 @@ ol, ul { list-style: none; }
 /* ── 첫 화면 ── */
 .hero { position: relative; background: #fff; padding: 20px 24px 24px; border-radius: 0 0 24px 24px; }
 :root[data-native] .hero { padding-top: max(20px, var(--safe-top, 0px)); }
-.hero-art { display: block; width: 176px; height: 110px; margin: 12px 0 8px -8px; }
 h1 { font-size: 26px; line-height: 1.38; font-weight: 700; letter-spacing: -.035em; word-break: keep-all; }
 h1 .num { color: var(--blue-dark); font-variant-numeric: tabular-nums; }
-.hero-sub { margin-top: 8px; font-size: 16px; color: var(--grey-700); word-break: keep-all; }
 
 /* ── 지역 버튼: 어디 기준인지 보여 주는 조용한 버튼 ── */
 .region-button { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; max-width: 100%; margin: 0 0 12px -4px; padding: 0 10px 0 8px; border-radius: 12px; font-size: 16px; font-weight: 700; color: var(--grey-800); transition: background .15s; }
@@ -40,10 +38,10 @@ h1 .num { color: var(--blue-dark); font-variant-numeric: tabular-nums; }
 .section-title { font-size: 20px; font-weight: 700; padding: 0 24px 8px; }
 
 /* ── 목록 카드: 제목·정렬 → 분야 → 조건 → 목록 ── */
-.list-card { padding-top: 16px; }
-.list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 16px 0 0; }
-.list-head .section-title { padding-bottom: 0; }
-.list-card .chips { margin-top: 8px; }
+.list-card { position: relative; padding-top: 16px; scroll-margin-top: 12px; }
+.list-card .chips { margin-top: 0; }
+.chips .sort-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 10px 0 14px; border-color: var(--grey-200); background: var(--grey-50); color: var(--grey-900); }
+.chips .sort-chip .down { margin-left: 2px; }
 .checks { display: flex; flex-wrap: wrap; column-gap: 14px; padding: 4px 20px 4px; border-bottom: 1px solid var(--grey-100); margin-bottom: 4px; }
 .fresh-link { margin-top: 4px; display: inline-flex; align-items: center; gap: 2px; min-height: 44px; font-size: 16px; font-weight: 600; color: var(--blue-dark); }
 .fresh-link .chevron { color: currentColor; }
@@ -94,17 +92,7 @@ h1 .num { color: var(--blue-dark); font-variant-numeric: tabular-nums; }
 .more-actions .more-button + .more-button { margin-top: -8px; }
 .more-button.weak { background: none; color: var(--grey-700); }
 
-.steps { padding: 4px 24px 16px; display: grid; gap: 18px; }
-.step { display: flex; gap: 14px; align-items: center; }
-.step-icon { width: 48px; height: 48px; flex: none; }
-.step > span { display: flex; flex-direction: column; }
-.step strong { font-size: 16px; font-weight: 600; }
-.step span span { font-size: 14px; color: var(--grey-600); word-break: keep-all; }
 
-.share-card { display: flex; align-items: center; gap: 12px; padding: 20px 24px; }
-.share-card > div { flex: 1; display: flex; flex-direction: column; }
-.share-card strong { font-size: 16px; font-weight: 600; }
-.share-card span { font-size: 14px; color: var(--grey-600); }
 .pill-button { flex: none; min-height: 44px; padding: 0 16px; border-radius: 12px; background: var(--blue-pale); color: var(--blue-dark); font-weight: 600; font-size: 15px; transition: background .2s; }
 
 /* 회색 바탕 위 글자는 진하게(대비 4.5:1 이상) */

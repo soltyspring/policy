@@ -1,4 +1,4 @@
-import { Device, Environment, Notification, SafeArea, Screen, Share, User, graniteEvent } from '@apps-in-toss/web-framework';
+import { Device, Environment, Notification, SafeArea, Screen, User, graniteEvent } from '@apps-in-toss/web-framework';
 
 export function isNativeToss() {
   try { return /^\d+\.\d+/.test(Environment.tossAppVersion); } catch { return false; }
@@ -57,18 +57,4 @@ export function requestAgreement(templateCode: string | undefined): Promise<Agre
 export async function createAuthCode(): Promise<string | null> {
   if (!isNativeToss()) return import.meta.env.DEV ? `dev-${crypto.randomUUID()}` : null;
   try { return (await User.createAnonymousKeyAuthCode()).code; } catch { return null; }
-}
-
-/** 친구에게 앱 공유 */
-export async function shareApp() {
-  const message = '우리 동네에서 받을 수 있는 정책과 혜택을 한곳에서 찾아봐요. 동네 정책 찾기';
-  if (isNativeToss()) {
-    try {
-      const link = await Share.createLink({ path: 'intoss://policy' });
-      await Share.sendMessage({ message: `${message}\n${link}` });
-      return true;
-    } catch { return false; }
-  }
-  if (typeof navigator.share === 'function') { try { await navigator.share({ title: '동네 정책 찾기', text: message }); return true; } catch { return false; } }
-  try { await navigator.clipboard.writeText(message); return true; } catch { return false; }
 }

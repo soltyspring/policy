@@ -5,33 +5,6 @@ export function Logo({ size = 28 }: { size?: number }) {
   return <img src={`${import.meta.env.BASE_URL}logo.png`} width={size} height={size} alt="" aria-hidden="true" className="logo" />;
 }
 
-/** 지도 핀과 정책 문서 */
-export function HeroArt() {
-  return (
-    <svg className="hero-art" viewBox="0 0 240 150" aria-hidden="true">
-      <defs>
-        <linearGradient id="h-pin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#64a8ff" /><stop offset="1" stopColor="#1b64da" /></linearGradient>
-        <filter id="h-shadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="#1b64da" floodOpacity=".16" /></filter>
-      </defs>
-      <ellipse cx="120" cy="138" rx="86" ry="9" fill="#dfeaf8" />
-      <path d="M30 118l40-18 50 16 50-16 40 18-40 14-50-12-50 12z" fill="#e8f0fb" />
-      <g filter="url(#h-shadow)">
-        <rect x="128" y="24" width="72" height="92" rx="14" fill="#ffffff" />
-        <rect x="140" y="40" width="40" height="7" rx="3.5" fill="#c9daf2" />
-        <rect x="140" y="56" width="48" height="6" rx="3" fill="#e5edf8" />
-        <rect x="140" y="68" width="36" height="6" rx="3" fill="#e5edf8" />
-        <rect x="140" y="88" width="30" height="16" rx="8" fill="#e8f3ff" />
-        <path d="M150 96h10" stroke="#3182f6" strokeWidth="3" strokeLinecap="round" />
-      </g>
-      <g filter="url(#h-shadow)">
-        <path d="M84 22c-18 0-31 13-31 30 0 22 31 54 31 54s31-32 31-54c0-17-13-30-31-30z" fill="url(#h-pin)" />
-        <circle cx="84" cy="52" r="12" fill="#ffffff" />
-      </g>
-      <g fill="#ffc342"><path d="M208 22l3.5 8 8 3.5-8 3.5-3.5 8-3.5-8-8-3.5 8-3.5z" /></g>
-      <circle cx="36" cy="40" r="5" fill="#9ccaff" /><circle cx="216" cy="98" r="4" fill="#9ccaff" />
-    </svg>
-  );
-}
 
 const FIELD_COLORS: Record<Field, [string, string]> = {
   job: ['#e8f3ff', '#3182f6'], housing: ['#eefaf3', '#0f9d58'], education: ['#fff4e0', '#d97f00'], welfare: ['#fdeeee', '#e5484d'],
@@ -57,17 +30,6 @@ export function FieldIcon({ field }: { field: Field }) {
   );
 }
 
-/** 이렇게 모아요 단계 아이콘 */
-export function StepIcon({ kind }: { kind: 'source' | 'refresh' | 'apply' }) {
-  return (
-    <svg className="step-icon" viewBox="0 0 48 48" aria-hidden="true">
-      <rect width="48" height="48" rx="16" fill={kind === 'source' ? '#eefaf3' : kind === 'refresh' ? '#fff4e0' : '#e8f3ff'} />
-      {kind === 'source' && <g fill="none" stroke="#0f9d58" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 14h12l6 6v14H16z" /><path d="M21 26l3 3 6-6" /></g>}
-      {kind === 'refresh' && <g fill="none" stroke="#d97f00" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M33 24a9 9 0 1 1-2.9-6.6" /><path d="M31 12v6h-6" /></g>}
-      {kind === 'apply' && <g fill="none" stroke="#3182f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M27 14h7v7" /><path d="M34 14L22 26" /><path d="M30 28v5a1 1 0 0 1-1 1H15a1 1 0 0 1-1-1V19a1 1 0 0 1 1-1h5" /></g>}
-    </svg>
-  );
-}
 
 export function EmptyArt() {
   return (
