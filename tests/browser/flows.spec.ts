@@ -21,7 +21,7 @@ async function pickRegion(page: Page, sido: string, sgg: string) {
 test('홈: 지역을 고르지 않아도 전국 정책을 바로 보여 줘요, 목록은 최근 3개·더보기', async ({ page }, info) => {
   await page.goto('/?notify=0');
   await expect(regionBtn(page)).toHaveText('전국');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/전국에서\s*신청할 수 있는 정책 \d+개/);
   // 고르라고 재촉하는 문구나 꼭 필요하지 않은 안내 카드는 없어요
   await expect(page.getByText(/이렇게 모아요|친구가 있나요|한곳에 모았어요/)).toHaveCount(0);
   await expect(page.locator('main')).not.toContainText(/골라 주세요|선택해 주세요|알려 주세요/);
