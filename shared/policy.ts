@@ -112,7 +112,7 @@ export interface PolicyQuery {
   sort?: SortKey;
 }
 
-export function matchesRegion(p: Policy, sido?: string, sgg?: string, national = true) {
+export function matchesRegion(p: Pick<Policy, 'scope' | 'sido' | 'sgg'>, sido?: string, sgg?: string, national = true) {
   if (!sido) return true;
   if (p.scope === 'national') return national;
   if (!p.sido.includes(sido)) return false;
@@ -120,10 +120,30 @@ export function matchesRegion(p: Policy, sido?: string, sgg?: string, national =
   return p.sgg.includes(sgg);
 }
 
-/** 청년 대상 정책인지. 온통청년 정책은 모두 청년 대상이에요. */
-export const isYouth = (p: Policy) => p.source === 'youth' || /청년/.test(`${p.title} ${p.target} ${p.summary}`);
+/** 청년 대상 정책인지. 온통청년 정책은 모두 청년 대상이에요. 가벼운 목록은 서버가 미리 계산한 youth 값을 써요. */
+export const isYouth = (p: PolicyBase) => p.youth ?? (p.source === 'youth' || /청년/.test(`${p.title} ${p.target ?? ''} ${p.summary ?? ''}`));
 
-export function filterPolicies(list: Policy[], q: PolicyQuery, today = kstDate()) {
+/** 목록·정렬·조건에 필요한 칸만. 앱은 지역마다 이 목록을 한 번 받아 기기에서 바로 걸러요. */
+export type PolicyBase = Pick<Policy, 'id' | 'source' | 'title' | 'agency' | 'field' | 'scope' | 'sido' | 'sgg' | 'applyStart' | 'applyEnd' | 'applyCode' | 'views' | 'registeredAt' | 'firstSeenAt'>
+  & { youth?: boolean; summary?: string; target?: string };
+export type PolicyLite = PolicyBase & { youth: boolean };
+
+/** 가벼운 목록의 칸 순서. 칸 이름을 줄마다 반복하지 않아 크기가 1/3로 줄어요. */
+export const LITE_FIELDS = ['id', 'source', 'title', 'agency', 'field', 'scope', 'sido', 'sgg', 'applyStart', 'applyEnd', 'applyCode', 'views', 'registeredAt', 'firstSeenAt', 'youth'] as const;
+export const toLiteRow = (p: Policy) => LITE_FIELDS.map(k => (k === 'youth' ? isYouth(p) : p[k]));
+export function fromLiteRows(rows: unknown[][]): PolicyLite[] {
+  return rows.map(r => Object.fromEntries(LITE_FIELDS.map((k, i) => [k, r[i]])) as unknown as PolicyLite);
+}
+
+export interface PolicyIndexResponse {
+  version: string;
+  updatedAt: string | null;
+  sources: SourceStatus[];
+  fields: typeof LITE_FIELDS;
+  rows: unknown[][];
+}
+
+export function filterPolicies<T extends PolicyBase>(list: T[], q: PolicyQuery, today = kstDate()): T[] {
   const words = (q.q ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
   return list.filter(p =>
     matchesRegion(p, q.sido, q.sgg, q.national !== false)
@@ -131,25 +151,35 @@ export function filterPolicies(list: Policy[], q: PolicyQuery, today = kstDate()
     && (!q.source || p.source === q.source)
     && (!q.youth || isYouth(p))
     && (!q.open || applyState(p, today) !== 'closed')
-    && words.every(w => `${p.title} ${p.agency} ${p.summary}`.toLowerCase().includes(w)));
+    && words.every(w => `${p.title} ${p.agency} ${p.summary ?? ''}`.toLowerCase().includes(w)));
+}
+
+/** 이번 주(7일) 안에 원 데이터에 등록됐고 아직 신청할 수 있는 정책 수 */
+export function freshCount<T extends PolicyBase>(list: T[], today = kstDate()) {
+  const weekAgo = kstDate(new Date(Date.parse(today) - 7 * 86400_000));
+  return list.filter(p => (p.registeredAt ?? '') >= weekAgo && applyState(p, today) !== 'closed').length;
 }
 
 const STATE_RANK: Record<ApplyState, number> = { open: 0, upcoming: 1, always: 2, unknown: 3, closed: 4 };
-const byName = (a: Policy, b: Policy) => a.title.localeCompare(b.title, 'ko');
-const registered = (p: Policy) => p.registeredAt ?? p.firstSeenAt;
+/** 한글 이름 비교기는 한 번만 만들어요. localeCompare(…, 'ko')를 매번 부르면 1만 건 정렬이 수십 배 느려져요. */
+const koCollator = new Intl.Collator('ko');
+const byName = (a: PolicyBase, b: PolicyBase) => koCollator.compare(a.title, b.title);
+const registered = (p: PolicyBase) => p.registeredAt ?? p.firstSeenAt;
 
-export function sortPolicies(list: Policy[], sort: SortKey = 'deadline', today = kstDate()) {
+export function sortPolicies<T extends PolicyBase>(list: T[], sort: SortKey = 'deadline', today = kstDate()): T[] {
   const out = [...list];
   if (sort === 'name') return out.sort(byName);
-  if (sort === 'recent') return out.sort((a, b) => registered(b).localeCompare(registered(a)) || byName(a, b));
+  if (sort === 'recent') return out.sort((a, b) => (registered(a) < registered(b) ? 1 : registered(a) > registered(b) ? -1 : byName(a, b)));
   if (sort === 'popular') return out.sort((a, b) => b.views - a.views || byName(a, b));
-  // 마감 임박순: 신청 중(마감일 가까운 순) → 곧 시작 → 상시 → 기간 미상 → 마감
+  // 마감 임박순: 신청 중(마감일 가까운 순) → 곧 시작 → 상시 → 기간 미상 → 마감. 상태는 한 번만 계산해요.
+  const st = new Map(out.map(p => [p, applyState(p, today)]));
+  const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
   return out.sort((a, b) => {
-    const sa = applyState(a, today), sb = applyState(b, today);
+    const sa = st.get(a)!, sb = st.get(b)!;
     if (sa !== sb) return STATE_RANK[sa] - STATE_RANK[sb];
-    if (sa === 'open') return (a.applyEnd ?? '9999').localeCompare(b.applyEnd ?? '9999') || byName(a, b);
-    if (sa === 'upcoming') return (a.applyStart ?? '').localeCompare(b.applyStart ?? '') || byName(a, b);
-    if (sa === 'closed') return (b.applyEnd ?? '').localeCompare(a.applyEnd ?? '') || byName(a, b);
+    if (sa === 'open') return cmp(a.applyEnd ?? '9999', b.applyEnd ?? '9999') || byName(a, b);
+    if (sa === 'upcoming') return cmp(a.applyStart ?? '', b.applyStart ?? '') || byName(a, b);
+    if (sa === 'closed') return cmp(b.applyEnd ?? '', a.applyEnd ?? '') || byName(a, b);
     return b.views - a.views || byName(a, b);
   });
 }

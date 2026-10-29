@@ -1,5 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { applyState, filterPolicies, kstDate, parseQuery, sortPolicies, type PolicyListResponse } from '../shared/policy.ts';
+import { applyState, filterPolicies, kstDate, LITE_FIELDS, parseQuery, sortPolicies, toLiteRow, type PolicyIndexResponse, type PolicyListResponse } from '../shared/policy.ts';
 import type { RegionIndex } from '../shared/regions.ts';
 import type { Store } from './store.ts';
 import { TossError, type TossClient } from './toss.ts';
@@ -66,6 +66,33 @@ export function createApp(o: AppOptions) {
   app.get('/api/config', noStore, (_req, res) => res.json({ notify: !!o.notifyEnabled, intervalHours: o.intervalHours ?? 6 }));
 
   app.get('/api/regions', shortCache, (_req, res) => res.json(o.regions().data));
+
+  /**
+   * 가벼운 목록: 고른 지역(전국 정책 포함)의 정책을 칸 이름 없이 줄 배열로 한 번에 줘요.
+   * 앱은 이걸 받아 분야·조건·정렬을 기기에서 바로 바꿔서, 칩을 누를 때마다 서버를 기다리지 않아요.
+   * 데이터가 바뀔 때(version)까지 지역별 결과를 메모리에 들고 있어요.
+   */
+  const indexCache = new Map<string, string>();
+  let indexVersion = '';
+  app.get('/api/index', rateLimit(120, 60_000), (req, res) => {
+    const q = parseQuery(req.query as Record<string, unknown>);
+    const version = o.store.getMeta('version') ?? '0';
+    if (version !== indexVersion) { indexCache.clear(); indexVersion = version; }
+    const key = `${q.sido ?? ''}|${q.sido ? q.sgg ?? '' : ''}`;
+    const etag = `"${version}:${key}"`;
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    let body = indexCache.get(key);
+    if (!body) {
+      const list = filterPolicies(o.store.allPolicies(), { sido: q.sido, sgg: q.sido ? q.sgg : undefined, national: true });
+      const out: PolicyIndexResponse = { version, updatedAt: o.store.getMeta('updatedAt'), sources: o.store.sourceStatuses(), fields: LITE_FIELDS, rows: list.map(toLiteRow) };
+      body = JSON.stringify(out);
+      if (indexCache.size > 300) indexCache.clear();
+      indexCache.set(key, body);
+    }
+    res.type('application/json').send(body);
+  });
 
   app.get('/api/policies', rateLimit(240, 60_000), shortCache, (req, res) => {
     const q = parseQuery(req.query as Record<string, unknown>);

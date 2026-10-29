@@ -1,4 +1,4 @@
-import type { Policy } from '../shared/policy';
+import type { Policy, PolicyBase } from '../shared/policy';
 import type { RegionIndex } from '../shared/regions';
 
 export interface Picked { sido: string | null; sgg: string | null }
@@ -14,7 +14,7 @@ export function pickedLabel(p: Picked, idx: RegionIndex, long = false) {
 }
 
 /** 정책 대상 지역 이름: "전국", "서울 전체", "서울 강남구", "경기 수원시 외 2곳" */
-export function policyRegionLabel(p: Policy, idx: RegionIndex) {
+export function policyRegionLabel(p: Pick<PolicyBase, 'scope' | 'sido' | 'sgg'>, idx: RegionIndex) {
   if (p.scope === 'national') return '전국';
   if (p.sgg.length) {
     const first = idx.byCode.get(p.sgg[0]);
@@ -30,7 +30,7 @@ export function policyRegionLabel(p: Policy, idx: RegionIndex) {
  * 목록 제목은 줄마다 달라야 해요. 같은 이름의 정책(여러 구에서 하는 "청년 월세 지원" 등)은
  * 지역이나 기관 이름을 붙여서 구분해요.
  */
-export function uniqueTitles(list: Policy[], idx: RegionIndex): string[] {
+export function uniqueTitles(list: PolicyBase[], idx: RegionIndex): string[] {
   const count = new Map<string, number>();
   for (const p of list) count.set(p.title, (count.get(p.title) ?? 0) + 1);
   const used = new Set<string>();
@@ -45,7 +45,7 @@ export function uniqueTitles(list: Policy[], idx: RegionIndex): string[] {
 }
 
 /** 목록 둘째 줄: "교육부 · 전국". 기관 이름에 지역이 이미 들어 있으면("서울특별시 강남구") 지역은 빼요. */
-export function metaLine(p: Policy, idx: RegionIndex) {
+export function metaLine(p: PolicyBase, idx: RegionIndex) {
   const region = policyRegionLabel(p, idx);
   if (p.scope === 'regional') {
     const sido = idx.sidoByCode.get(p.sido[0]);
@@ -59,7 +59,7 @@ export function metaLine(p: Policy, idx: RegionIndex) {
 export const ageLabel = (p: Policy) =>
   p.ageMin && p.ageMax ? `만 ${p.ageMin}~${p.ageMax}세` : p.ageMin ? `만 ${p.ageMin}세 이상` : p.ageMax ? `만 ${p.ageMax}세 이하` : null;
 
-export const periodLabel = (p: Policy) => {
+export const periodLabel = (p: Pick<Policy, 'applyStart' | 'applyEnd' | 'applyCode'>) => {
   if (p.applyCode === 'always') return '상시 신청';
   const f = (d: string) => `${d.slice(0, 4)}.${Number(d.slice(5, 7))}.${Number(d.slice(8, 10))}`;
   if (p.applyStart && p.applyEnd) return `${f(p.applyStart)} ~ ${f(p.applyEnd)}`;

@@ -1,4 +1,4 @@
-import type { Policy, PolicyListResponse, PolicyQuery, SubscriptionState } from '../shared/policy';
+import type { Policy, PolicyIndexResponse, PolicyListResponse, PolicyQuery, SubscriptionState } from '../shared/policy';
 import type { RegionData } from '../shared/regions';
 
 const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
@@ -50,6 +50,9 @@ export const api = {
   hasSession: () => !!localStorage.getItem(TOKEN_KEY),
   config: () => call<AppConfig>('/api/config'),
   regions: () => call<RegionData>('/api/regions'),
+  /** 고른 지역의 가벼운 목록(전국 정책 포함). 분야·조건·정렬은 기기에서 바꿔요. */
+  index: (region: { sido?: string | null; sgg?: string | null }, signal?: AbortSignal) =>
+    call<PolicyIndexResponse>(`/api/index?${queryString({ sido: region.sido ?? undefined, sgg: region.sido ? region.sgg ?? undefined : undefined })}`, { signal }),
   policies: (q: PolicyQuery & { offset?: number; limit?: number }, signal?: AbortSignal) => call<ListResponse>(`/api/policies?${queryString(q)}`, { signal }),
   policy: (id: string) => call<Policy>(`/api/policies/${encodeURIComponent(id)}`),
   async connect(code: string) {

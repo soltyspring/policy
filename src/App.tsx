@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  applyLabel, applyState, daysLeft, FIELD_LABELS, FIELDS, SORT_KEYS, SORT_LABELS, SOURCE_LABELS,
-  type Field, type Policy, type SortKey, type SubscriptionState,
+  applyLabel, applyState, daysLeft, FIELD_LABELS, FIELDS, filterPolicies, freshCount, fromLiteRows, kstDate, SORT_KEYS, SORT_LABELS, sortPolicies, SOURCE_LABELS,
+  type Field, type Policy, type PolicyIndexResponse, type PolicyLite, type SortKey, type SourceStatus, type SubscriptionState,
 } from '../shared/policy';
-import { createRegionIndex, REGIONS, type RegionData, type RegionIndex, type Sido } from '../shared/regions';
-import { api, ApiError, type AppConfig, type ListResponse } from './api';
-import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, HeroArt, Logo, PinIcon, StepIcon } from './Art';
+import { createRegionIndex, REGIONS, type RegionData } from '../shared/regions';
+import { api, ApiError, type AppConfig } from './api';
+import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, Logo, PinIcon, StepIcon } from './Art';
 import { ageLabel, metaLine, periodLabel, pickedLabel, policyRegionLabel, uniqueTitles, type Picked } from './labels';
 import { connectNative, createAuthCode, haptic, isNativeToss, openExternal, requestAgreement, shareApp } from './platform';
 
@@ -18,8 +18,9 @@ const REGION_KEY = 'policy:region:v1';
 const LIST_TITLES: Record<SortKey, string> = { deadline: '마감이 가까운 정책', recent: '새로 올라온 정책', popular: '많이 본 정책', name: '가나다순 정책' };
 
 type SheetKind =
-  | { type: 'policy'; policy: Policy }
-  | { type: 'region'; step: 'sido' | 'sgg' }
+  | { type: 'policy'; policy: PolicyLite }
+  /** sido가 있으면 그 시·도의 시·군·구 목록, 없으면 시·도 목록 */
+  | { type: 'region'; sido: string | null }
   | { type: 'sort' }
   | { type: 'setup' }
   | { type: 'settings' }
@@ -37,6 +38,32 @@ function readPicked(): Picked {
 /** 개발 화면에서 `?notify=0`이면 알림 화면을 숨겨요(콘솔 스크린샷용). */
 const forceNotifyOff = import.meta.env.DEV && new URLSearchParams(location.search).get('notify') === '0';
 
+// ── 가벼운 목록 기억 ─────────────────────────────
+/** 지역 하나의 가벼운 목록. key는 "시·도|시·군·구" */
+interface RegionIndexData { key: string; version: string; updatedAt: string | null; sources: SourceStatus[]; items: PolicyLite[] }
+const INDEX_KEY = 'policy:index:v1';
+/** 이번에 연 동안 받은 지역별 목록(지역을 오가도 다시 받지 않아요) */
+const memoryIndex = new Map<string, RegionIndexData>();
+/** 연 정책 상세(같은 정책을 다시 열면 바로 보여요) */
+const detailCache = new Map<string, Policy>();
+const keyOf = (p: Picked) => `${p.sido ?? ''}|${p.sido ? p.sgg ?? '' : ''}`;
+const toIndexData = (key: string, r: PolicyIndexResponse): RegionIndexData =>
+  ({ key, version: r.version, updatedAt: r.updatedAt, sources: r.sources, items: fromLiteRows(r.rows) });
+/** 마지막으로 본 지역의 목록은 기기에 저장해서, 다음에 열면 기다리지 않고 바로 보여 주고 뒤에서 새로 받아요. */
+function readCachedIndex(p: Picked): RegionIndexData | null {
+  try {
+    const raw = localStorage.getItem(INDEX_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as { key: string; at: number; data: PolicyIndexResponse };
+    if (saved.key !== keyOf(p) || Date.now() - saved.at > 3 * 86400_000) return null;
+    return toIndexData(saved.key, saved.data);
+  } catch { return null; }
+}
+function writeCachedIndex(data: RegionIndexData, r: PolicyIndexResponse) {
+  try { localStorage.setItem(INDEX_KEY, JSON.stringify({ key: data.key, at: Date.now(), data: r })); }
+  catch { /* 저장 공간이 부족하면 기억하지 않아요 */ }
+}
+
 export default function App() {
   const [regionData, setRegionData] = useState<RegionData>(REGIONS);
   const idx = useMemo(() => createRegionIndex(regionData), [regionData]);
@@ -48,10 +75,11 @@ export default function App() {
   /** 지역을 골랐을 때 전국 정책을 빼고 볼지 */
   const [localOnly, setLocalOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>('deadline');
-  const [list, setList] = useState<ListResponse | null>(null);
+  const [index, setIndex] = useState<RegionIndexData | null>(() => readCachedIndex(readPicked()));
   const [listError, setListError] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  /** 펼쳤을 때 보이는 개수(0이면 접힘: 3개만) */
+  const [shown, setShown] = useState(0);
   const [sub, setSub] = useState<SubscriptionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -67,35 +95,54 @@ export default function App() {
   useEffect(() => {
     api.config().then(setConfig).catch(() => setConfig({ notify: false, intervalHours: 6 }));
     api.regions().then(d => { if (Array.isArray(d?.sido) && d.sido.length >= 10) setRegionData(d); }).catch(() => { /* 함께 배포한 목록을 써요 */ });
-    const off = connectNative(() => { if (sheetRef.current) { setSheet(null); return true; } return false; });
+    // 뒤로 가기: 시·군·구 목록이면 시·도 목록으로, 다른 시트면 닫기, 없으면 미니앱 닫기
+    const off = connectNative(() => {
+      const s = sheetRef.current;
+      if (s?.type === 'region' && s.sido) { setSheet({ type: 'region', sido: null }); return true; }
+      if (s) { setSheet(null); return true; }
+      return false;
+    });
     return off;
   }, []);
 
   useEffect(() => { if (notifyOn && api.hasSession()) api.subscription().then(setSub).catch(() => setSub(null)); }, [notifyOn]);
   useEffect(() => { localStorage.setItem(REGION_KEY, JSON.stringify(picked)); }, [picked]);
 
-  /** 조건이 바뀌면 첫 쪽부터 다시 받아요. 앞 요청은 취소해요. */
-  const loadList = useCallback((signal?: AbortSignal) => {
+  /**
+   * 지역이 바뀔 때만 서버에서 가벼운 목록을 받아요(전국 정책 포함, 한 번에).
+   * 분야·조건·정렬은 기기에서 바로 바꿔서 칩을 누르면 기다리지 않아요.
+   * 받은 목록은 지역별로 기억하고, 마지막 지역은 기기에 저장해 다음에 열 때 바로 보여 줘요.
+   */
+  const regionKey = `${picked.sido ?? ''}|${picked.sido ? picked.sgg ?? '' : ''}`;
+  const loadIndex = useCallback((signal?: AbortSignal) => {
     setListError(false);
-    return api.policies({ ...query, limit: PAGE }, signal)
-      .then(r => { setList(r); setExpanded(false); })
-      .catch(e => { if ((e as Error).name !== 'AbortError') setListError(true); });
-  }, [query]);
+    const memo = memoryIndex.get(regionKey) ?? readCachedIndex(picked);
+    if (memo) setIndex(memo); // 기억한 목록을 먼저 보여 주고 뒤에서 새로 받아요
+    setRefreshing(true);
+    return api.index(picked, signal)
+      .then(r => { const data = toIndexData(regionKey, r); memoryIndex.set(regionKey, data); writeCachedIndex(data, r); setIndex(data); })
+      .catch(e => { if ((e as Error).name !== 'AbortError' && !memo) setListError(true); })
+      .finally(() => { if (!signal?.aborted) setRefreshing(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionKey]);
   useEffect(() => {
     const ctrl = new AbortController();
-    void loadList(ctrl.signal);
+    void loadIndex(ctrl.signal);
     return () => ctrl.abort();
-  }, [loadList]);
+  }, [loadIndex]);
+  // 조건이 바뀌면 다시 3개부터 보여 줘요.
+  useEffect(() => { setShown(0); }, [query]);
 
-  async function loadMore() {
-    if (!list || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const r = await api.policies({ ...query, limit: PAGE, offset: list.items.length });
-      setList(l => (l ? { ...r, items: [...l.items, ...r.items.filter(p => !l.items.some(x => x.id === p.id))] } : r));
-    } catch { showToast('더 불러오지 못했어요. 다시 눌러 주세요'); }
-    finally { setLoadingMore(false); }
-  }
+  const today = kstDate();
+  const items = index?.key === regionKey ? index.items : index?.items ?? [];
+  const view = useMemo(() => {
+    const matched = filterPolicies(items, query, today);
+    return {
+      sorted: sortPolicies(matched, sort, today),
+      open: query.open ? matched.length : filterPolicies(items, { ...query, open: true }, today).length,
+      fresh: freshCount(matched, today),
+    };
+  }, [items, query, sort, today]);
 
   function choose(next: Picked, message?: string) {
     setPicked(next);
@@ -103,7 +150,8 @@ export default function App() {
     haptic('success');
     if (message) showToast(message);
   }
-  const pickAndTell = (p: Picked) => choose(p, `${pickedLabel(p, idx)} 정책을 보여 드릴게요`);
+  /** 지역 버튼: 이미 고른 시·도가 있으면 그 시·군·구 목록부터 보여 줘요(같은 시·도 안에서 바꾸는 일이 가장 많아요). */
+  const openRegion = () => setSheet({ type: 'region', sido: picked.sido && picked.sido !== '36' ? picked.sido : null });
 
   /** 새 정책 수를 누르면 최근 등록순으로 바꾸고 목록으로 내려가요. */
   function showFresh() {
@@ -155,11 +203,12 @@ export default function App() {
     showToast((await shareApp()) ? (native ? '공유했어요' : '소개 문구를 복사했어요') : '공유하지 못했어요');
   }
 
-  const items = list?.items ?? [];
-  const visible = expanded ? items : items.slice(0, RECENT_LIMIT);
+  const total = view.sorted.length;
+  const visible = view.sorted.slice(0, shown || RECENT_LIMIT);
   const titles = useMemo(() => uniqueTitles(visible, idx), [visible, idx]);
   const regionText = pickedLabel(picked, idx);
-  const noData = !!list && list.total === 0 && list.sources.every(s => s.state !== 'ok');
+  const ready = !!index;
+  const noData = ready && items.length === 0 && index!.sources.every(s => s.state !== 'ok');
   const subscribed = !!sub?.subscribed;
   const resetFilters = () => { setYouthOnly(false); setField(undefined); setOpenOnly(false); setLocalOnly(false); };
 
@@ -170,24 +219,20 @@ export default function App() {
       </header>
 
       <main>
-        {/* 동네 선택은 첫 화면의 행동 자리(제목·설명 바로 아래)에 늘 같은 모양으로 둬요. */}
+        {/* 지역은 고르지 않아도 돼요. 버튼 하나로 "어디 기준인지"만 보여 주고, 누르면 시·도 → 시·군·구 순서로 골라요. */}
         <section className="hero" aria-labelledby="hero-title">
-          {/* 장식 그림은 처음 화면에만. 동네를 고른 뒤에는 목록이 먼저예요. */}
-          {!picked.sido && <HeroArt />}
+          <button className="region-button" onClick={openRegion} aria-label={`지역: ${pickedLabel(picked, idx, true)}. 바꾸기`}>
+            <PinIcon /><span>{picked.sido ? regionText : '전국'}</span><Down />
+          </button>
           <h1 id="hero-title">
-            {!picked.sido ? <>사는 동네를<br />골라 주세요</>
-              : list ? <>지금 신청할 수 있는<br />정책 <b className="num">{list.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
+            {ready ? <>지금 신청할 수 있는<br />정책 <b className="num">{view.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
           </h1>
-          {!picked.sido || !list || list.fresh === 0 ? (
-            <p className="hero-sub">
-              {!picked.sido ? (list ? `전국 혜택 ${list.open.toLocaleString('ko-KR')}개 중 우리 동네 것만 골라 드려요` : '우리 동네에서 받을 수 있는 혜택만 골라 드려요')
-                : '정부와 지자체 혜택을 한곳에 모았어요'}
-            </p>
-          ) : (
+          {ready && view.fresh > 0 ? (
             // 새 정책 수를 누르면 최근 등록순 목록으로 바로 가요.
-            <button className="fresh-link" onClick={showFresh}>이번 주 새로 올라온 정책 {list.fresh}개<Chevron /></button>
+            <button className="fresh-link" onClick={showFresh}>이번 주 새로 올라온 정책 {view.fresh}개<Chevron /></button>
+          ) : (
+            <p className="hero-sub">정부와 지자체 혜택을 한곳에 모았어요</p>
           )}
-          <RegionSelect idx={idx} picked={picked} onOpen={step => setSheet({ type: 'region', step })} />
         </section>
 
         <section className="card list-card" aria-labelledby="list-title">
@@ -207,28 +252,26 @@ export default function App() {
             <CheckChip label="청년 대상" checked={youthOnly} onChange={setYouthOnly} />
             {picked.sido && <CheckChip label="우리 지역만" checked={localOnly} onChange={setLocalOnly} />}
           </div>
-          {!list && !listError && <div className="skeleton-list" aria-label="불러오는 중"><span /><span /><span /></div>}
-          {listError && !list && <div className="empty"><EmptyArt /><p>정책을 불러오지 못했어요</p><button className="text-button" onClick={() => void loadList()}>다시 불러오기</button></div>}
+          {!ready && !listError && <div className="skeleton-list" aria-label="불러오는 중"><span /><span /><span /></div>}
+          {listError && !ready && <div className="empty"><EmptyArt /><p>정책을 불러오지 못했어요</p><button className="text-button" onClick={() => void loadIndex()}>다시 불러오기</button></div>}
           {noData && <div className="empty"><EmptyArt /><p>정책을 준비하고 있어요</p><span className="small">곧 채워질 거예요. 잠시 후 다시 확인해 주세요</span></div>}
-          {list && !noData && list.total === 0 && (
+          {ready && !noData && total === 0 && (
             <div className="empty"><EmptyArt /><p>조건에 맞는 정책이 없어요</p><button className="text-button" onClick={resetFilters}>조건 풀기</button></div>
           )}
-          <ul className="policy-list">
+          <ul className={`policy-list ${refreshing && index?.key !== regionKey ? 'is-stale' : ''}`} aria-busy={refreshing && index?.key !== regionKey}>
             {visible.map((p, i) => <PolicyRow key={p.id} policy={p} title={titles[i]} meta={metaLine(p, idx)} onOpen={() => setSheet({ type: 'policy', policy: p })} />)}
           </ul>
-          {items.length > RECENT_LIMIT && !expanded && (
-            <button className="more-button" aria-expanded={false} onClick={() => setExpanded(true)}>
-              더보기 ({(list!.total - RECENT_LIMIT).toLocaleString('ko-KR')}개)<Down />
+          {total > RECENT_LIMIT && !shown && (
+            <button className="more-button" aria-expanded={false} onClick={() => setShown(PAGE)}>
+              더보기 ({(total - RECENT_LIMIT).toLocaleString('ko-KR')}개)<Down />
             </button>
           )}
-          {expanded && (
+          {!!shown && (
             <div className="more-actions">
-              {items.length < (list?.total ?? 0) && (
-                <button className="more-button" onClick={() => void loadMore()} disabled={loadingMore} aria-busy={loadingMore}>
-                  {loadingMore ? '불러오는 중' : `${Math.min(PAGE, list!.total - items.length)}개 더 보기`}
-                </button>
+              {shown < total && (
+                <button className="more-button" onClick={() => setShown(n => n + PAGE)}>{Math.min(PAGE, total - shown)}개 더 보기</button>
               )}
-              <button className="more-button weak" aria-expanded={true} onClick={() => setExpanded(false)}>접기<Down open /></button>
+              <button className="more-button weak" aria-expanded={true} onClick={() => setShown(0)}>접기<Down open /></button>
             </div>
           )}
         </section>
@@ -249,7 +292,7 @@ export default function App() {
 
         <footer className="footer">
           <p>동네 정책 찾기는 정부·지자체와 관련 없는 개인 서비스예요. 실제 지원 조건과 신청 방법은 담당 기관의 공식 안내를 확인해 주세요.</p>
-          <p className="sources">자료: {sourceCredit(list)}{list?.updatedAt ? ` · ${new Date(list.updatedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric' })} 기준` : ''}</p>
+          <p className="sources">자료: {sourceCredit(index)}{index?.updatedAt ? ` · ${new Date(index.updatedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric' })} 기준` : ''}</p>
           <p className="footer-links">
             <button onClick={() => setSheet({ type: 'doc', kind: 'terms' })}>이용약관</button>
             <button onClick={() => setSheet({ type: 'doc', kind: 'privacy' })}>개인정보 처리방침</button>
@@ -270,8 +313,9 @@ export default function App() {
 
       {sheet?.type === 'policy' && <Sheet title={sheet.policy.title} onClose={() => setSheet(null)}><PolicyDetail policy={sheet.policy} region={policyRegionLabel(sheet.policy, idx)} /></Sheet>}
       {sheet?.type === 'region' && (
-        <Sheet title="동네 고르기" onClose={() => setSheet(null)}>
-          <RegionPicker data={regionData} picked={picked} start={sheet.step} onPick={p => choose(p, p.sido ? `${pickedLabel(p, idx)} 정책을 보여 드릴게요` : '모든 지역 정책을 보여 드릴게요')} />
+        <Sheet title="지역 고르기" onClose={() => setSheet(null)}>
+          <RegionPicker data={regionData} picked={picked} sido={sheet.sido} onSido={code => setSheet({ type: 'region', sido: code })}
+            onPick={p => choose(p, p.sido ? `${pickedLabel(p, idx)} 정책을 보여 드릴게요` : '전국 정책을 보여 드릴게요')} />
         </Sheet>
       )}
       {sheet?.type === 'sort' && (
@@ -293,7 +337,7 @@ export default function App() {
             <p className="detail-summary">하루에 한 번까지만 보내요. 전국 정책은 알림에서 빼요.</p>
             {picked.sido
               ? <button className="cta full" onClick={() => void startNotify()} disabled={busy} aria-busy={busy}>{busy ? <span className="spinner" aria-label="연결 중" /> : '알림 받기'}</button>
-              : <button className="cta full" onClick={() => setSheet({ type: 'region', step: 'sido' })}>동네 고르기</button>}
+              : <button className="cta full" onClick={openRegion}>지역 고르기</button>}
           </div>
         </Sheet>
       )}
@@ -315,9 +359,9 @@ export default function App() {
 }
 
 /** 실제로 쓰고 있는 출처만 적어요. */
-function sourceCredit(list: ListResponse | null) {
-  const ok = new Set(list?.sources.filter(s => s.state === 'ok').map(s => s.source));
-  return [ok.has('gov24') || !list ? '행정안전부 대한민국 공공서비스 정보' : null, ok.has('youth') ? '한국고용정보원 온통청년' : null, '도로명주소'].filter(Boolean).join(', ');
+function sourceCredit(index: RegionIndexData | null) {
+  const ok = new Set(index?.sources.filter(s => s.state === 'ok').map(s => s.source));
+  return [ok.has('gov24') || !index ? '행정안전부 대한민국 공공서비스 정보' : null, ok.has('youth') ? '한국고용정보원 온통청년' : null, '도로명주소'].filter(Boolean).join(', ');
 }
 
 function CheckChip({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
@@ -329,7 +373,7 @@ function CheckChip({ label, checked, onChange }: { label: string; checked: boole
   );
 }
 
-function PolicyRow({ policy, title, meta, onOpen }: { policy: Policy; title: string; meta: string; onOpen: () => void }) {
+function PolicyRow({ policy, title, meta, onOpen }: { policy: PolicyLite; title: string; meta: string; onOpen: () => void }) {
   const st = applyState(policy);
   const left = daysLeft(policy.applyEnd);
   const tone = st === 'closed' ? 'closed' : st === 'always' ? 'always' : st === 'open' && left !== null && left <= 7 ? 'urgent' : 'normal';
@@ -347,8 +391,20 @@ function PolicyRow({ policy, title, meta, onOpen }: { policy: Policy; title: str
   );
 }
 
-function PolicyDetail({ policy, region }: { policy: Policy; region: string }) {
-  const age = ageLabel(policy);
+/**
+ * 정책 상세. 목록에 있는 칸(제목·기간·지역·담당)은 바로 보여 주고,
+ * 긴 설명과 공식 페이지 주소는 열 때 한 번 받아 기억해요.
+ */
+function PolicyDetail({ policy, region }: { policy: PolicyLite; region: string }) {
+  const [full, setFull] = useState<Policy | null>(() => detailCache.get(policy.id) ?? null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (full) return;
+    let alive = true;
+    api.policy(policy.id).then(p => { detailCache.set(p.id, p); if (alive) setFull(p); }).catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; };
+  }, [policy.id, full]);
+  const age = full ? ageLabel(full) : null;
   return (
     <div className="detail">
       <div className="badges">
@@ -357,18 +413,22 @@ function PolicyDetail({ policy, region }: { policy: Policy; region: string }) {
         <span className={`badge state-${applyState(policy)}`}>{applyLabel(policy)}</span>
       </div>
       <h2 className="detail-title">{policy.title}</h2>
-      {policy.summary && <p className="detail-summary">{policy.summary}</p>}
+      {full?.summary && <p className="detail-summary">{full.summary}</p>}
       <dl className="facts">
         <div><dt>지역</dt><dd>{region}</dd></div>
         <div><dt>신청 기간</dt><dd>{periodLabel(policy)}</dd></div>
         {age && <div><dt>나이</dt><dd>{age}</dd></div>}
         <div><dt>담당</dt><dd>{policy.agency}</dd></div>
       </dl>
-      {policy.benefit && <section className="detail-block"><h3>지원 내용</h3><p>{policy.benefit}</p></section>}
-      {policy.target && <section className="detail-block"><h3>지원 대상</h3><p>{policy.target}</p></section>}
-      {policy.how && <section className="detail-block"><h3>신청 방법</h3><p>{policy.how}</p></section>}
+      {!full && !failed && <div className="skeleton-list detail-skeleton" aria-label="자세한 내용 불러오는 중"><span /><span /></div>}
+      {failed && <p className="small">자세한 내용을 불러오지 못했어요. 공식 페이지에서 확인해 주세요</p>}
+      {full?.benefit && <section className="detail-block"><h3>지원 내용</h3><p>{full.benefit}</p></section>}
+      {full?.target && <section className="detail-block"><h3>지원 대상</h3><p>{full.target}</p></section>}
+      {full?.how && <section className="detail-block"><h3>신청 방법</h3><p>{full.how}</p></section>}
       <div className="sheet-cta">
-        <button className="cta full" onClick={() => void openExternal(policy.url)}>공식 페이지에서 확인하기</button>
+        <button className="cta full" disabled={!full} aria-busy={!full && !failed} onClick={() => full && void openExternal(full.url)}>
+          {full || failed ? '공식 페이지에서 확인하기' : <span className="spinner" aria-label="불러오는 중" />}
+        </button>
         <p className="small center">조건과 서류는 공식 페이지에서 꼭 확인해 주세요</p>
       </div>
     </div>
@@ -376,36 +436,26 @@ function PolicyDetail({ policy, region }: { policy: Policy; region: string }) {
 }
 
 /**
- * 첫 화면의 동네 선택. 시·도와 시·군·구 두 칸이고, 누르면 아래에서 목록이 올라와요.
- * 시·도를 고르면 바로 시·군·구 목록으로 넘어가요.
+ * 지역 고르기 시트. 시·도를 누르면 같은 시트에서 그 시·도의 시·군·구 목록으로 넘어가요.
+ * 단계는 부모가 들고 있어서 토스 뒤로 가기가 "시·군·구 → 시·도 → 닫기" 순서로 움직여요.
  */
-function RegionSelect({ idx, picked, onOpen }: { idx: RegionIndex; picked: Picked; onOpen: (step: 'sido' | 'sgg') => void }) {
-  const sido = picked.sido ? idx.sidoByCode.get(picked.sido) : undefined;
-  const sgg = sido && picked.sgg ? sido.sgg.find(s => s.code === picked.sgg) : undefined;
-  const single = sido?.code === '36';
-  return (
-    <div className={`region-select ${sido ? '' : 'is-empty'}`} role="group" aria-label="동네">
-      <button onClick={() => onOpen('sido')} aria-label={`시·도: ${sido?.name ?? '고르기 전'}. 바꾸기`}>
-        <PinIcon /><span><small>시·도</small><strong>{sido?.short ?? '선택'}</strong></span><Down />
-      </button>
-      <button onClick={() => onOpen(sido && !single ? 'sgg' : 'sido')} disabled={single} aria-label={`시·군·구: ${single ? '세종시' : sgg?.name ?? (sido ? `${sido.short} 전체` : '고르기 전')}. 바꾸기`}>
-        <span><small>시·군·구</small><strong>{single ? '세종시' : sgg?.name ?? (sido ? '전체' : '선택')}</strong></span><Down />
-      </button>
-    </div>
-  );
-}
-
-function RegionPicker({ data, picked, start, onPick }: { data: RegionData; picked: Picked; start: 'sido' | 'sgg'; onPick: (p: Picked) => void }) {
-  const [sido, setSido] = useState<Sido | null>(() => (start === 'sgg' ? data.sido.find(s => s.code === picked.sido) ?? null : null));
+function RegionPicker({ data, picked, sido: sidoCode, onSido, onPick }: { data: RegionData; picked: Picked; sido: string | null; onSido: (code: string | null) => void; onPick: (p: Picked) => void }) {
+  const sido = sidoCode ? data.sido.find(s => s.code === sidoCode) ?? null : null;
   const listRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (sido) listRef.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true }); }, [sido]);
+  // 단계가 바뀌면 고른 칸(없으면 첫 칸)에 초점을 두고 보이게 해요.
+  useEffect(() => {
+    const el = listRef.current?.querySelector<HTMLButtonElement>('button.on') ?? listRef.current?.querySelector<HTMLButtonElement>('button');
+    el?.focus({ preventScroll: true });
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [sidoCode]);
   if (sido) {
+    const whole = picked.sido === sido.code && !picked.sgg;
     return (
       <div className="region-picker">
-        <button className="back-link" onClick={() => setSido(null)}><Chevron />시·도 다시 고르기</button>
+        <button className="back-link" onClick={() => onSido(null)}><Chevron />시·도</button>
         <h2 className="detail-title">{sido.name}</h2>
         <div className="grid" ref={listRef} role="group" aria-label={`${sido.short} 시·군·구`}>
-          <button className={picked.sido === sido.code && !picked.sgg ? 'on' : ''} aria-pressed={picked.sido === sido.code && !picked.sgg} onClick={() => onPick({ sido: sido.code, sgg: null })}>{sido.short} 전체</button>
+          <button className={whole ? 'on' : ''} aria-pressed={whole} onClick={() => onPick({ sido: sido.code, sgg: null })}>{sido.short} 전체</button>
           {sido.sgg.map(s => (
             <button key={s.code} className={picked.sgg === s.code ? 'on' : ''} aria-pressed={picked.sgg === s.code} onClick={() => onPick({ sido: sido.code, sgg: s.code })}>{s.name}</button>
           ))}
@@ -415,19 +465,18 @@ function RegionPicker({ data, picked, start, onPick }: { data: RegionData; picke
   }
   return (
     <div className="region-picker">
-      <h2 className="detail-title">어느 시·도에 사세요?</h2>
-      <div className="grid" role="group" aria-label="시·도">
+      <h2 className="detail-title">어느 지역 정책을 볼까요?</h2>
+      <div className="grid" ref={listRef} role="group" aria-label="시·도">
+        <button className={!picked.sido ? 'on' : ''} aria-pressed={!picked.sido} onClick={() => onPick({ sido: null, sgg: null })}>전국</button>
         {data.sido.map(s => (
           <button key={s.code} className={picked.sido === s.code ? 'on' : ''} aria-pressed={picked.sido === s.code}
-            onClick={() => (s.code === '36' ? onPick({ sido: s.code, sgg: null }) : setSido(s))}>{s.short}</button>
+            onClick={() => (s.code === '36' ? onPick({ sido: s.code, sgg: null }) : onSido(s.code))}>{s.short}</button>
         ))}
-        <button className={!picked.sido ? 'on' : ''} aria-pressed={!picked.sido} onClick={() => onPick({ sido: null, sgg: null })}>모든 지역</button>
       </div>
       <p className="small">{data.updatedAt} 행정구역 기준이에요</p>
     </div>
   );
 }
-
 function Step({ icon, title, text }: { icon: 'source' | 'refresh' | 'apply'; title: string; text: string }) {
   return <li className="step"><StepIcon kind={icon} /><span><strong>{title}</strong><span>{text}</span></span></li>;
 }
