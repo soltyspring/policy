@@ -19,7 +19,7 @@
     "regions": "tsx --env-file-if-exists=backend/.env --env-file-if-exists=.env scripts/build-regions.ts",
     "logo": "tsx scripts/make-logo.ts",
     "test": "tsx --test tests/*.test.ts",
-    "test:e2e": "playwright test --project=mobile --project=tablet --project=desktop",
+    "test:e2e": "playwright test --project=mobile --project=tablet --project=desktop --project=audit",
     "shots": "playwright test --project=store"
   },
   "dependencies": {

@@ -14,7 +14,6 @@ const app = createApp({
   // 알림을 켜지 않으면 토스 인증서도 읽지 않아요.
   toss: notifyEnabled ? tossOrUnavailable() : { mock: false, exchangeCode: async () => { throw new Error('off'); }, sendBulk: async () => ({ sent: 0, failed: 0 }), sendOne: async () => false },
   notifyEnabled,
-  jusoKey: process.env.JUSO_API_KEY?.trim() || undefined,
   allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean),
   intervalHours: Number(process.env.COLLECT_INTERVAL_HOURS || 6),
   staticDir: 'dist',

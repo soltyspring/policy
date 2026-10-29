@@ -4,8 +4,8 @@ import {
   type Field, type Policy, type SortKey, type SubscriptionState,
 } from '../shared/policy';
 import { createRegionIndex, REGIONS, type RegionData, type RegionIndex, type Sido } from '../shared/regions';
-import { api, ApiError, type AddressHit, type AppConfig, type ListResponse } from './api';
-import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, HeroArt, Logo, PinIcon, SearchIcon, StepIcon } from './Art';
+import { api, ApiError, type AppConfig, type ListResponse } from './api';
+import { BellOn, Check, Chevron, Down, EmptyArt, FieldIcon, HeroArt, Logo, PinIcon, StepIcon } from './Art';
 import { ageLabel, metaLine, periodLabel, pickedLabel, policyRegionLabel, uniqueTitles, type Picked } from './labels';
 import { connectNative, createAuthCode, haptic, isNativeToss, openExternal, requestAgreement, shareApp } from './platform';
 
@@ -19,7 +19,7 @@ const LIST_TITLES: Record<SortKey, string> = { deadline: '마감이 가까운 �
 
 type SheetKind =
   | { type: 'policy'; policy: Policy }
-  | { type: 'region' }
+  | { type: 'region'; step: 'sido' | 'sgg' }
   | { type: 'sort' }
   | { type: 'setup' }
   | { type: 'settings' }
@@ -65,7 +65,7 @@ export default function App() {
   const showToast = useCallback((text: string) => { setToast(text); window.setTimeout(() => setToast(t => (t === text ? null : t)), 2800); }, []);
 
   useEffect(() => {
-    api.config().then(setConfig).catch(() => setConfig({ notify: false, intervalHours: 6, address: false }));
+    api.config().then(setConfig).catch(() => setConfig({ notify: false, intervalHours: 6 }));
     api.regions().then(d => { if (Array.isArray(d?.sido) && d.sido.length >= 10) setRegionData(d); }).catch(() => { /* 함께 배포한 목록을 써요 */ });
     const off = connectNative(() => { if (sheetRef.current) { setSheet(null); return true; } return false; });
     return off;
@@ -104,6 +104,12 @@ export default function App() {
     if (message) showToast(message);
   }
   const pickAndTell = (p: Picked) => choose(p, `${pickedLabel(p, idx)} 정책을 보여 드릴게요`);
+
+  /** 새 정책 수를 누르면 최근 등록순으로 바꾸고 목록으로 내려가요. */
+  function showFresh() {
+    setSort('recent');
+    document.getElementById('list-title')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  }
 
   // ── 새 정책 알림(콘솔 캠페인 승인 뒤 서버 NOTIFY_ENABLED로 켜요) ──
   async function ensureSession() {
@@ -164,64 +170,43 @@ export default function App() {
       </header>
 
       <main>
-        {picked.sido ? (
-          <section className="hero" aria-labelledby="hero-title">
-            <div className="town">
-              <span className="town-pin" aria-hidden="true"><PinIcon /></span>
-              <strong className="town-name">{regionText}</strong>
-              <button className="town-change" onClick={() => setSheet({ type: 'region' })} aria-label={`동네 바꾸기 (지금 ${pickedLabel(picked, idx, true)})`}>동네 바꾸기</button>
-            </div>
-            <HeroArt />
-            <h1 id="hero-title">
-              {list ? <>지금 신청할 수 있는<br />정책 <b className="num">{list.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
-            </h1>
+        {/* 동네 선택은 첫 화면의 행동 자리(제목·설명 바로 아래)에 늘 같은 모양으로 둬요. */}
+        <section className="hero" aria-labelledby="hero-title">
+          {/* 장식 그림은 처음 화면에만. 동네를 고른 뒤에는 목록이 먼저예요. */}
+          {!picked.sido && <HeroArt />}
+          <h1 id="hero-title">
+            {!picked.sido ? <>사는 동네를<br />골라 주세요</>
+              : list ? <>지금 신청할 수 있는<br />정책 <b className="num">{list.open.toLocaleString('ko-KR')}</b>개</> : <>정책을 모으고 있어요</>}
+          </h1>
+          {!picked.sido || !list || list.fresh === 0 ? (
             <p className="hero-sub">
-              {list && list.fresh > 0 ? `이번 주 새로 올라온 정책 ${list.fresh}개` : '정부와 지자체 혜택을 한곳에 모았어요'}
+              {!picked.sido ? (list ? `전국 혜택 ${list.open.toLocaleString('ko-KR')}개 중 우리 동네 것만 골라 드려요` : '우리 동네에서 받을 수 있는 혜택만 골라 드려요')
+                : '정부와 지자체 혜택을 한곳에 모았어요'}
             </p>
-          </section>
-        ) : (
-          <section className="hero finder-hero" aria-labelledby="hero-title">
-            <HeroArt />
-            <h1 id="hero-title">사는 동네를<br />알려 주세요</h1>
-            <p className="hero-sub">{list ? `전국 혜택 ${list.open.toLocaleString('ko-KR')}개 중 우리 동네 것만 골라 드려요` : '우리 동네에서 받을 수 있는 혜택만 골라 드려요'}</p>
-            <NeighborhoodFinder idx={idx} addressSearch={!!config?.address} onPick={pickAndTell} />
-            <button className="text-button list-pick" onClick={() => setSheet({ type: 'region' })}>시·도 목록에서 고르기</button>
-          </section>
-        )}
+          ) : (
+            // 새 정책 수를 누르면 최근 등록순 목록으로 바로 가요.
+            <button className="fresh-link" onClick={showFresh}>이번 주 새로 올라온 정책 {list.fresh}개<Chevron /></button>
+          )}
+          <RegionSelect idx={idx} picked={picked} onOpen={step => setSheet({ type: 'region', step })} />
+        </section>
 
-        <section className="card filters" aria-label="정책 조건">
-          <div className="segmented" role="group" aria-label="대상">
-            {([false, true] as const).map(y => (
-              <button key={String(y)} aria-pressed={youthOnly === y} className={youthOnly === y ? 'on' : ''} onClick={() => setYouthOnly(y)}>
-                {y ? '청년 대상' : '모든 대상'}
-              </button>
-            ))}
+        <section className="card list-card" aria-labelledby="list-title">
+          {/* 정렬과 조건은 그 조건이 바꾸는 목록 바로 위에 둬요. */}
+          <div className="list-head">
+            <h2 id="list-title" className="section-title">{LIST_TITLES[sort]}</h2>
+            <button className="sort-button" onClick={() => setSheet({ type: 'sort' })} aria-label={`정렬: ${SORT_LABELS[sort]}. 바꾸기`}>
+              {SORT_LABELS[sort]}<Down />
+            </button>
           </div>
           <div className="chips" role="group" aria-label="분야">
             <button aria-pressed={!field} className={!field ? 'on' : ''} onClick={() => setField(undefined)}>전체 분야</button>
             {FIELDS.map(f => <button key={f} aria-pressed={field === f} className={field === f ? 'on' : ''} onClick={() => setField(field === f ? undefined : f)}>{FIELD_LABELS[f]}</button>)}
           </div>
-          <div className="filter-row">
-            <span className="checks">
-              <label className="check-chip">
-                <input type="checkbox" checked={openOnly} onChange={e => setOpenOnly(e.target.checked)} />
-                <span className="box" aria-hidden="true"><Check /></span>신청 가능한 것만
-              </label>
-              {picked.sido && (
-                <label className="check-chip">
-                  <input type="checkbox" checked={localOnly} onChange={e => setLocalOnly(e.target.checked)} />
-                  <span className="box" aria-hidden="true"><Check /></span>우리 지역만
-                </label>
-              )}
-            </span>
-            <button className="sort-button" onClick={() => setSheet({ type: 'sort' })} aria-label={`정렬: ${SORT_LABELS[sort]}. 바꾸기`}>
-              {SORT_LABELS[sort]}<Down />
-            </button>
+          <div className="checks" role="group" aria-label="조건">
+            <CheckChip label="신청 가능" checked={openOnly} onChange={setOpenOnly} />
+            <CheckChip label="청년 대상" checked={youthOnly} onChange={setYouthOnly} />
+            {picked.sido && <CheckChip label="우리 지역만" checked={localOnly} onChange={setLocalOnly} />}
           </div>
-        </section>
-
-        <section className="card" aria-labelledby="list-title">
-          <h2 id="list-title" className="section-title">{LIST_TITLES[sort]}</h2>
           {!list && !listError && <div className="skeleton-list" aria-label="불러오는 중"><span /><span /><span /></div>}
           {listError && !list && <div className="empty"><EmptyArt /><p>정책을 불러오지 못했어요</p><button className="text-button" onClick={() => void loadList()}>다시 불러오기</button></div>}
           {noData && <div className="empty"><EmptyArt /><p>정책을 준비하고 있어요</p><span className="small">곧 채워질 거예요. 잠시 후 다시 확인해 주세요</span></div>}
@@ -285,8 +270,8 @@ export default function App() {
 
       {sheet?.type === 'policy' && <Sheet title={sheet.policy.title} onClose={() => setSheet(null)}><PolicyDetail policy={sheet.policy} region={policyRegionLabel(sheet.policy, idx)} /></Sheet>}
       {sheet?.type === 'region' && (
-        <Sheet title="지역 고르기" onClose={() => setSheet(null)}>
-          <RegionPicker data={regionData} idx={idx} picked={picked} addressSearch={!!config?.address} onPick={p => choose(p)} onFound={pickAndTell} />
+        <Sheet title="동네 고르기" onClose={() => setSheet(null)}>
+          <RegionPicker data={regionData} picked={picked} start={sheet.step} onPick={p => choose(p, p.sido ? `${pickedLabel(p, idx)} 정책을 보여 드릴게요` : '모든 지역 정책을 보여 드릴게요')} />
         </Sheet>
       )}
       {sheet?.type === 'sort' && (
@@ -308,7 +293,7 @@ export default function App() {
             <p className="detail-summary">하루에 한 번까지만 보내요. 전국 정책은 알림에서 빼요.</p>
             {picked.sido
               ? <button className="cta full" onClick={() => void startNotify()} disabled={busy} aria-busy={busy}>{busy ? <span className="spinner" aria-label="연결 중" /> : '알림 받기'}</button>
-              : <button className="cta full" onClick={() => setSheet({ type: 'region' })}>지역 고르기</button>}
+              : <button className="cta full" onClick={() => setSheet({ type: 'region', step: 'sido' })}>동네 고르기</button>}
           </div>
         </Sheet>
       )}
@@ -333,6 +318,15 @@ export default function App() {
 function sourceCredit(list: ListResponse | null) {
   const ok = new Set(list?.sources.filter(s => s.state === 'ok').map(s => s.source));
   return [ok.has('gov24') || !list ? '행정안전부 대한민국 공공서비스 정보' : null, ok.has('youth') ? '한국고용정보원 온통청년' : null, '도로명주소'].filter(Boolean).join(', ');
+}
+
+function CheckChip({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className={`check-chip ${checked ? 'on' : ''}`}>
+      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+      <span className="box" aria-hidden="true"><Check /></span>{label}
+    </label>
+  );
 }
 
 function PolicyRow({ policy, title, meta, onOpen }: { policy: Policy; title: string; meta: string; onOpen: () => void }) {
@@ -373,14 +367,36 @@ function PolicyDetail({ policy, region }: { policy: Policy; region: string }) {
       {policy.benefit && <section className="detail-block"><h3>지원 내용</h3><p>{policy.benefit}</p></section>}
       {policy.target && <section className="detail-block"><h3>지원 대상</h3><p>{policy.target}</p></section>}
       {policy.how && <section className="detail-block"><h3>신청 방법</h3><p>{policy.how}</p></section>}
-      <button className="cta full" onClick={() => void openExternal(policy.url)}>공식 페이지에서 확인하기</button>
-      <p className="small center">조건과 서류는 공식 페이지에서 꼭 확인해 주세요</p>
+      <div className="sheet-cta">
+        <button className="cta full" onClick={() => void openExternal(policy.url)}>공식 페이지에서 확인하기</button>
+        <p className="small center">조건과 서류는 공식 페이지에서 꼭 확인해 주세요</p>
+      </div>
     </div>
   );
 }
 
-function RegionPicker({ data, idx, picked, addressSearch, onPick, onFound }: { data: RegionData; idx: RegionIndex; picked: Picked; addressSearch: boolean; onPick: (p: Picked) => void; onFound: (p: Picked) => void }) {
-  const [sido, setSido] = useState<Sido | null>(() => data.sido.find(s => s.code === picked.sido) ?? null);
+/**
+ * 첫 화면의 동네 선택. 시·도와 시·군·구 두 칸이고, 누르면 아래에서 목록이 올라와요.
+ * 시·도를 고르면 바로 시·군·구 목록으로 넘어가요.
+ */
+function RegionSelect({ idx, picked, onOpen }: { idx: RegionIndex; picked: Picked; onOpen: (step: 'sido' | 'sgg') => void }) {
+  const sido = picked.sido ? idx.sidoByCode.get(picked.sido) : undefined;
+  const sgg = sido && picked.sgg ? sido.sgg.find(s => s.code === picked.sgg) : undefined;
+  const single = sido?.code === '36';
+  return (
+    <div className={`region-select ${sido ? '' : 'is-empty'}`} role="group" aria-label="동네">
+      <button onClick={() => onOpen('sido')} aria-label={`시·도: ${sido?.name ?? '고르기 전'}. 바꾸기`}>
+        <PinIcon /><span><small>시·도</small><strong>{sido?.short ?? '선택'}</strong></span><Down />
+      </button>
+      <button onClick={() => onOpen(sido && !single ? 'sgg' : 'sido')} disabled={single} aria-label={`시·군·구: ${single ? '세종시' : sgg?.name ?? (sido ? `${sido.short} 전체` : '고르기 전')}. 바꾸기`}>
+        <span><small>시·군·구</small><strong>{single ? '세종시' : sgg?.name ?? (sido ? '전체' : '선택')}</strong></span><Down />
+      </button>
+    </div>
+  );
+}
+
+function RegionPicker({ data, picked, start, onPick }: { data: RegionData; picked: Picked; start: 'sido' | 'sgg'; onPick: (p: Picked) => void }) {
+  const [sido, setSido] = useState<Sido | null>(() => (start === 'sgg' ? data.sido.find(s => s.code === picked.sido) ?? null : null));
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (sido) listRef.current?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true }); }, [sido]);
   if (sido) {
@@ -390,7 +406,7 @@ function RegionPicker({ data, idx, picked, addressSearch, onPick, onFound }: { d
         <h2 className="detail-title">{sido.name}</h2>
         <div className="grid" ref={listRef} role="group" aria-label={`${sido.short} 시·군·구`}>
           <button className={picked.sido === sido.code && !picked.sgg ? 'on' : ''} aria-pressed={picked.sido === sido.code && !picked.sgg} onClick={() => onPick({ sido: sido.code, sgg: null })}>{sido.short} 전체</button>
-          {sido.code !== '36' && sido.sgg.map(s => (
+          {sido.sgg.map(s => (
             <button key={s.code} className={picked.sgg === s.code ? 'on' : ''} aria-pressed={picked.sgg === s.code} onClick={() => onPick({ sido: sido.code, sgg: s.code })}>{s.name}</button>
           ))}
         </div>
@@ -399,74 +415,15 @@ function RegionPicker({ data, idx, picked, addressSearch, onPick, onFound }: { d
   }
   return (
     <div className="region-picker">
-      <h2 className="detail-title">어느 동네 정책을 볼까요?</h2>
-      <NeighborhoodFinder idx={idx} addressSearch={addressSearch} onPick={onFound} compact />
+      <h2 className="detail-title">어느 시·도에 사세요?</h2>
       <div className="grid" role="group" aria-label="시·도">
-        <button className={!picked.sido ? 'on' : ''} aria-pressed={!picked.sido} onClick={() => onPick({ sido: null, sgg: null })}>모든 지역</button>
         {data.sido.map(s => (
           <button key={s.code} className={picked.sido === s.code ? 'on' : ''} aria-pressed={picked.sido === s.code}
             onClick={() => (s.code === '36' ? onPick({ sido: s.code, sgg: null }) : setSido(s))}>{s.short}</button>
         ))}
+        <button className={!picked.sido ? 'on' : ''} aria-pressed={!picked.sido} onClick={() => onPick({ sido: null, sgg: null })}>모든 지역</button>
       </div>
-      <p className="small">{data.updatedAt} 주소 체계 기준이에요</p>
-    </div>
-  );
-}
-
-interface FinderHit { key: string; pick: Picked; title: string; sub: string }
-
-/**
- * 동네 찾기 입력창. 사용자가 직접 입력해서 동의 화면이 필요 없어요.
- * - 시·군·구 이름("강남구", "수원", "광주")은 기기 안에서 바로 찾아요.
- * - 동 이름·도로명("용봉동", "테헤란로")은 도로명주소 API로 찾아요. 입력한 글자는 저장하지 않아요.
- */
-function NeighborhoodFinder({ idx, addressSearch, onPick, compact = false }: { idx: RegionIndex; addressSearch: boolean; onPick: (p: Picked) => void; compact?: boolean }) {
-  const [q, setQ] = useState('');
-  const [remote, setRemote] = useState<AddressHit[]>([]);
-  const [searching, setSearching] = useState(false);
-  const term = q.trim();
-  useEffect(() => {
-    setRemote([]);
-    if (!addressSearch || term.length < 2) { setSearching(false); return; }
-    const ctrl = new AbortController();
-    setSearching(true);
-    const t = window.setTimeout(() => {
-      api.address(term, ctrl.signal).then(r => setRemote(r.items ?? [])).catch(() => setRemote([])).finally(() => { if (!ctrl.signal.aborted) setSearching(false); });
-    }, 300);
-    return () => { window.clearTimeout(t); ctrl.abort(); };
-  }, [term, addressSearch]);
-
-  const hits = useMemo<FinderHit[]>(() => {
-    if (!term) return [];
-    const local: FinderHit[] = idx.searchRegions(term, 6).map(r => ({
-      key: `l-${r.sido.code}-${r.sgg?.code ?? ''}`,
-      pick: { sido: r.sido.code, sgg: r.sgg?.code ?? null },
-      title: r.sgg ? `${r.sido.short} ${r.sgg.name}${r.gu ? ` ${r.gu}` : ''}` : r.sido.code === '36' ? r.sido.short : `${r.sido.short} 전체`,
-      sub: r.gu ? `${r.sgg!.name} 전체 정책을 보여 드려요` : r.sgg ? r.sido.name : '시·도 전체',
-    }));
-    const seen = new Set(local.map(h => h.title));
-    const fromAddress: FinderHit[] = remote.filter(h => !seen.has(h.label)).map(h => ({ key: `a-${h.label}`, pick: { sido: h.sido, sgg: h.sgg }, title: h.label, sub: '주소에서 찾았어요' }));
-    return [...local, ...fromAddress].slice(0, 8);
-  }, [term, remote, idx]);
-
-  return (
-    <div className={`finder ${compact ? 'compact' : ''}`}>
-      <label className="search-box">
-        <SearchIcon />
-        <span className="sr-only">동네 찾기</span>
-        <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder={addressSearch ? '동 이름, 도로명, 구 이름 (예: 용봉동)' : '시·군·구 이름 (예: 강남구)'}
-          maxLength={40} autoComplete="off" enterKeyHint="search" onKeyDown={e => { if (e.key === 'Enter' && hits[0]) onPick(hits[0].pick); }} />
-      </label>
-      <p className="sr-only" aria-live="polite">{term ? (hits.length ? `${hits.length}곳을 찾았어요` : searching ? '찾는 중' : '찾는 동네가 없어요') : ''}</p>
-      {term && (
-        <ul className="finder-results">
-          {hits.map(h => (
-            <li key={h.key}><button onClick={() => onPick(h.pick)}><PinIcon /><span><strong>{h.title}</strong><span>{h.sub}</span></span></button></li>
-          ))}
-          {!hits.length && !searching && <li className="finder-empty">찾는 동네가 없어요. 동 이름이나 도로명으로 찾아보세요</li>}
-          {searching && !hits.length && <li className="finder-empty">찾고 있어요</li>}
-        </ul>
-      )}
+      <p className="small">{data.updatedAt} 행정구역 기준이에요</p>
     </div>
   );
 }
@@ -506,7 +463,7 @@ function Doc({ kind }: { kind: 'terms' | 'privacy' }) {
       ['변경과 문의', '서비스 내용이 바뀌거나 중단될 수 있으며 중요한 변경은 시행 7일 전에 앱에서 알려 드려요. 문의: bluecl@bluecl.cloud'],
     ],
     privacy: [
-      ['수집하는 정보', '고른 동네는 이 기기에만 저장해요. 동네 찾기에 동 이름이나 도로명을 입력하면 행정구역을 찾으려고 그 글자만 서버를 거쳐 행정안전부 도로명주소 API에 보내고, 저장하지 않아요. 토스 계정 정보는 받지 않아요.'],
+      ['수집하는 정보', '고른 동네(시·도, 시·군·구)는 이 기기에만 저장하고 서버로 보내지 않아요. 주소나 토스 계정 정보는 받지 않아요.'],
       ['알림을 받을 때', '새 정책 알림을 켜면 토스가 이 미니앱 전용으로 발급하는 사용자 식별키와 알림 지역을 저장해요. 이름·전화번호는 받지 않아요.'],
       ['보관 기간', '알림을 끄면 발송 대상에서 바로 빼고 30일 안에 식별키를 지워요. 서버 접속 기록은 14일 뒤 지워요.'],
       ['문의', '열람·삭제 요청은 bluecl@bluecl.cloud로 보내 주세요.'],
