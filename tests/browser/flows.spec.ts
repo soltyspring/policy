@@ -8,22 +8,22 @@ const shot = (name: string, project: string) => `docs/screenshots/${project}-${n
 const rows = (page: Page) => page.locator('.policy-row');
 
 async function pickRegion(page: Page, sido: string, sgg: string) {
-  await page.locator('.region-chip').click();
+  await page.getByRole('button', { name: /시·도 목록에서 고르기|동네 바꾸기/ }).click();
   const sheet = page.getByRole('dialog', { name: '지역 고르기' });
+  if (await sheet.getByRole('button', { name: '시·도 다시 고르기' }).count()) await sheet.getByRole('button', { name: '시·도 다시 고르기' }).click();
   await sheet.getByRole('button', { name: sido, exact: true }).click();
   await sheet.getByRole('button', { name: sgg, exact: true }).click();
   await expect(sheet).toBeHidden();
 }
+const town = (page: Page) => page.locator('.town-name');
 
-test('홈: 첫 화면 문구·최근 3개·더보기', async ({ page }, info) => {
+test('홈: 처음엔 동네 찾기가 첫 화면, 목록은 최근 3개·더보기', async ({ page }, info) => {
   await page.goto('/?notify=0');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
-  // 배지·제목·설명이 서로 다른 정보예요(지역 / 개수 / 이번 주 새 정책)
-  const hero = page.locator('.hero');
-  await expect(hero.locator('.region-chip')).toHaveText('모든 지역');
-  await expect(hero.locator('.hero-sub')).toContainText('이번 주 새로 올라온 정책');
-  const heroText = await hero.innerText();
-  expect((heroText.match(/정책/g) ?? []).length).toBeLessThanOrEqual(2);
+  // 처음 열면 동네부터 물어봐요(제목·설명·입력창이 각각 다른 일)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('사는 동네를알려 주세요');
+  await expect(page.locator('.hero-sub')).toContainText(/전국 혜택 \d+개 중 우리 동네 것만/);
+  await expect(page.getByRole('searchbox', { name: '동네 찾기' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '시·도 목록에서 고르기' })).toBeVisible();
   await expect(rows(page)).toHaveCount(3);
   const titles = await page.locator('.policy-texts strong').allInnerTexts();
   expect(new Set(titles).size).toBe(titles.length);
@@ -39,9 +39,42 @@ test('홈: 첫 화면 문구·최근 3개·더보기', async ({ page }, info) =>
   await expect(rows(page)).toHaveCount(3);
 });
 
-test('지역: 시·도 → 시·군·구를 고르면 그 지역과 전국 정책만, 새로고침해도 유지', async ({ page }, info) => {
+test('동네 찾기: 구 이름을 치면 바로 후보, 고르면 우리 동네 화면', async ({ page }, info) => {
   await page.goto('/?notify=0');
-  await page.locator('.region-chip').click();
+  const box = page.getByRole('searchbox', { name: '동네 찾기' });
+  await box.fill('북구');
+  const results = page.locator('.finder-results button');
+  await expect(results.filter({ hasText: '전남광주 북구' })).toBeVisible();
+  expect(await results.count()).toBeGreaterThanOrEqual(4); // 부산·대구·울산·전남광주
+  await page.screenshot({ path: shot('finder', info.project.name), animations: 'disabled' });
+  await results.filter({ hasText: '전남광주 북구' }).first().click();
+  await expect(page.getByRole('status')).toHaveText('전남광주 북구 정책을 보여 드릴게요');
+  await expect(town(page)).toHaveText('전남광주 북구');
+  // 동네를 고른 뒤 첫 화면: 동네 / 개수 / 이번 주 새 정책
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
+  await expect(page.locator('.hero-sub')).toContainText('이번 주 새로 올라온 정책');
+  await expect(page.getByRole('searchbox', { name: '동네 찾기' })).toHaveCount(0);
+  await page.screenshot({ path: shot('town', info.project.name), fullPage: true, animations: 'disabled' });
+  await page.reload();
+  await expect(town(page)).toHaveText('전남광주 북구');
+});
+
+test('동네 찾기: 동 이름은 도로명주소로, 옛 이름(광주)도 지금 시·도로', async ({ page }) => {
+  await page.goto('/?notify=0');
+  const box = page.getByRole('searchbox', { name: '동네 찾기' });
+  await box.fill('광주');
+  await expect(page.locator('.finder-results button').first()).toContainText('전남광주 전체');
+  await box.fill('용봉동');
+  const hit = page.locator('.finder-results button', { hasText: '전남광주 북구 용봉동' });
+  await expect(hit).toBeVisible({ timeout: 10_000 });
+  await expect(hit).toContainText('주소에서 찾았어요');
+  await hit.click();
+  await expect(town(page)).toHaveText('전남광주 북구');
+});
+
+test('지역: 시·도 → 시·군·구 목록으로 고르면 그 지역과 전국 정책만', async ({ page }, info) => {
+  await page.goto('/?notify=0');
+  await page.getByRole('button', { name: '시·도 목록에서 고르기' }).click();
   const sheet = page.getByRole('dialog', { name: '지역 고르기' });
   await expect(sheet.getByRole('button', { name: '전남광주', exact: true })).toBeVisible();
   await expect(sheet.getByRole('button', { name: '광주', exact: true })).toHaveCount(0); // 2026년 통합
@@ -49,7 +82,7 @@ test('지역: 시·도 → 시·군·구를 고르면 그 지역과 전국 정�
   await sheet.getByRole('button', { name: '전남광주', exact: true }).click();
   await expect(sheet.getByRole('button', { name: '전남광주 전체', exact: true })).toBeFocused(); // 초점이 시·군·구 목록으로 가요
   await sheet.getByRole('button', { name: '북구', exact: true }).click();
-  await expect(page.locator('.region-chip')).toHaveText('전남광주 북구');
+  await expect(town(page)).toHaveText('전남광주 북구');
   await page.getByRole('button', { name: /더보기/ }).click();
   const meta = await page.locator('.policy-texts span').allInnerTexts();
   for (const m of meta) expect(m).toMatch(/전국|전남광주/);
@@ -58,16 +91,11 @@ test('지역: 시·도 → 시·군·구를 고르면 그 지역과 전국 정�
   await expect(page.locator('.policy-texts span').first()).not.toContainText('전국');
   const local = await page.locator('.policy-texts span').allInnerTexts();
   for (const m of local) expect(m).not.toMatch(/전국/);
-  await page.getByText('우리 지역만').click();
-  await page.reload();
-  await expect(page.locator('.region-chip')).toHaveText('전남광주 북구');
-});
-
-test('내 주소로 지역 찾기: 옛 주소(광주광역시 북구)도 지금 지역으로', async ({ page }) => {
-  await page.goto('/?notify=0');
-  await page.getByRole('button', { name: '내 주소로 지역 찾기' }).click();
-  await expect(page.getByRole('status')).toHaveText('전남광주 북구 정책을 보여 드릴게요');
-  await expect(page.locator('.region-chip')).toHaveText('전남광주 북구');
+  // 동네 바꾸기 → 모든 지역으로 돌아가면 다시 동네 찾기 화면
+  await page.getByRole('button', { name: /동네 바꾸기/ }).click();
+  await sheet.getByRole('button', { name: '시·도 다시 고르기' }).click();
+  await sheet.getByRole('button', { name: '모든 지역', exact: true }).click();
+  await expect(page.getByRole('searchbox', { name: '동네 찾기' })).toBeVisible();
 });
 
 test('정렬과 조건', async ({ page }) => {

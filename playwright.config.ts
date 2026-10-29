@@ -15,7 +15,7 @@ export default defineConfig({
   },
   projects: [
     { name: 'mobile', use: { viewport: { width: 375, height: 812 } }, testMatch: /flows/ },
-    { name: 'tablet', use: { viewport: { width: 768, height: 1024 } }, testMatch: /flows/, grep: /홈|지역|화면 크기/ },
+    { name: 'tablet', use: { viewport: { width: 768, height: 1024 } }, testMatch: /flows/, grep: /홈|지역|동네 찾기|화면 크기/ },
     { name: 'desktop', use: { viewport: { width: 1440, height: 900 } }, testMatch: /flows/, grep: /홈|화면 크기/ },
     // 콘솔 업로드용 스크린샷: 앱 화면은 375×812를 2배로 찍어 휴대폰 틀에 넣어요
     { name: 'store', use: { viewport: { width: 375, height: 812 }, deviceScaleFactor: 2 }, testMatch: /store-shots/ },

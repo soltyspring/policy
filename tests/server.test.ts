@@ -51,7 +51,7 @@ test('지역 API와 설정', async () => {
     const r = await s.call('/api/regions');
     assert.equal(r.body.sido.length, 16);
     const c = await s.call('/api/config');
-    assert.deepEqual(c.body, { notify: false, intervalHours: 6, locate: false });
+    assert.deepEqual(c.body, { notify: false, intervalHours: 6, address: false });
   } finally { await s.close(); }
 });
 
@@ -96,14 +96,32 @@ test('인증서가 없으면 알림만 503', async () => {
   } finally { await s.close(); }
 });
 
-test('주소로 지역 찾기: 키 없음 503, 옛 주소도 지금 코드로', async () => {
+test('동네 찾기(주소 API): 키 없음 503, 옛 주소도 지금 지역으로, 짧은 검색어는 빈 목록', async () => {
   const off = await serve();
-  try { assert.equal((await off.call('/api/locate?q=x%20y')).status, 503); } finally { await off.close(); }
-  const fake = (async () => new Response(JSON.stringify({ results: { common: { errorCode: '0', totalCount: '1' }, juso: [{ siNm: '인천광역시', sggNm: '제물포구', emdNm: '신포동', admCd: '2812510100' }] } }))) as unknown as typeof fetch;
+  try { assert.equal((await off.call('/api/address?q=%EC%9A%A9%EB%B4%89%EB%8F%99')).status, 503); } finally { await off.close(); }
+  const juso = [
+    { siNm: '인천광역시', sggNm: '제물포구', emdNm: '신포동', admCd: '2812510100' },
+    { siNm: '인천광역시', sggNm: '제물포구', emdNm: '신포동', admCd: '2812510100' }, // 같은 동은 한 번만
+    { siNm: '광주광역시', sggNm: '북구', emdNm: '용봉동', admCd: '2917012300' },       // 옛 코드
+  ];
+  let calls = 0;
+  const fake = (async (url: string) => {
+    calls++;
+    const kw = new URL(url).searchParams.get('keyword');
+    if (kw === '강남구') return new Response(JSON.stringify({ results: { common: { errorCode: 'E0006', errorMessage: '주소를 상세히 입력해 주시기 바랍니다.' } } }));
+    return new Response(JSON.stringify({ results: { common: { errorCode: '0', totalCount: '3' }, juso } }));
+  }) as unknown as typeof fetch;
   const s = await serve({ jusoKey: 'k', fetchImpl: fake });
   try {
-    const r = await s.call(`/api/locate?q=${encodeURIComponent('인천광역시 중구 신포로 27')}`);
-    assert.deepEqual(r.body, { sido: '28', sgg: '28125' });
+    const r = await s.call(`/api/address?q=${encodeURIComponent('신포')}`);
+    assert.deepEqual(r.body.items, [
+      { sido: '28', sgg: '28125', label: '인천 제물포구 신포동' },
+      { sido: '12', sgg: '12300', label: '전남광주 북구 용봉동' },
+    ]);
+    assert.deepEqual((await s.call(`/api/address?q=${encodeURIComponent('강남구')}`)).body, { items: [], hint: 'detail' });
+    const before = calls;
+    assert.deepEqual((await s.call('/api/address?q=a')).body, { items: [] });
+    assert.equal(calls, before); // 한 글자는 주소 API를 부르지 않아요
   } finally { await s.close(); }
 });
 
