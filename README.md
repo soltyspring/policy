@@ -4,7 +4,7 @@
 
 지금 데이터는 정부24 공공서비스(혜택) API예요. "청년 대상"은 제목·대상·설명에 "청년"이 있는 혜택이에요(약 500건). 온통청년 청년정책 수집기는 만들어 두었지만 공공데이터포털 운영 승인이 나기 전까지는 키가 거부돼서 건너뛰어요. 승인되면 키만 넣으면 함께 모여요.
 
-<img src="docs/screenshots/mobile-home.png" width="220" alt="홈" /> <img src="docs/screenshots/mobile-region.png" width="220" alt="지역 고르기" /> <img src="docs/screenshots/mobile-detail.png" width="220" alt="정책 상세" />
+<img src="docs/screenshots/mobile-finder.png" width="220" alt="동네 찾기" /> <img src="docs/screenshots/mobile-town.png" width="220" alt="우리 동네 홈" /> <img src="docs/screenshots/mobile-detail.png" width="220" alt="정책 상세" />
 
 모든 기능은 무료예요. 인앱결제·광고는 없어요.
 
@@ -16,7 +16,7 @@ systemd 타이머(6시간) → scripts/collect.ts
   └ 대한민국 공공서비스(혜택) API (DATA_GO_KR_API_KEY) → server/sources/gov24.ts
   → 지역 코드를 지금 행정구역으로 맞춤(shared/regions.ts) → SQLite
 systemd 타이머(주 1회) → scripts/build-regions.ts → 도로명주소 API로 시·도/시·군·구 확인 → data/regions.json
-미니앱 → GET /api/policies · /api/regions · /api/config · /api/locate
+미니앱 → GET /api/policies · /api/regions · /api/config · /api/address
 ```
 
 - **지역 목록**: 고정 목록 대신 도로명주소 API(JUSO_API_KEY)로 이름과 법정동코드를 하나씩 확인해요. 옛 이름으로 검색했는데 새 이름이 나오면 그 이름도 더해요. 2026-10-29 기준 시·도 16곳, 시·군·구 230곳이에요(일반구가 있는 시는 시 하나로 묶어요).
@@ -24,7 +24,7 @@ systemd 타이머(주 1회) → scripts/build-regions.ts → 도로명주소 API
   - 인천 중구·동구 → 제물포구·영종구, 서구 → 서해구·검단구
   - 화성시 일반구(만세·효행·병점·동탄)
 - **옛 코드 처리**: 정책 데이터에 남은 옛 코드(29·46 → 12, 42 → 51, 45 → 52, 인천 28110 등)를 지금 지역으로 바꿔요.
-- **내 주소로 찾기**: `User.getConsentedData`로 토스에 등록된 주소를 동의를 받고 불러와요. 먼저 기기 안에서 시·군·구를 찾고, 나뉜 옛 구처럼 이름만으로 정할 수 없을 때만 기본 주소를 서버에 보내 도로명주소 API로 확인해요. 주소는 저장하지 않아요. 콘솔에 동의 항목을 만들고 키를 `VITE_TOSS_ADDRESS_KEY`에 넣어야 버튼이 보여요.
+- **동네 찾기(첫 화면)**: 동네를 고르기 전에는 첫 화면이 "사는 동네를 알려 주세요" 입력창이에요. 사용자가 직접 입력해서 토스 동의 화면이 필요 없어요. 시·군·구 이름("강남구", "수원", "포항 북구", 옛 이름 "광주")은 기기 안에서 바로 찾고, 동 이름·도로명("용봉동", "테헤란로")은 `/api/address`가 도로명주소 API로 찾아요(구 이름만 넣으면 주소 API가 E0006으로 거절해서 이름 검색은 기기 안에서 해요). 입력한 글자는 저장하지 않아요. 동네를 고르면 첫 화면이 동네 이름 / 신청 가능 개수 / 이번 주 새 정책으로 바뀌어요.
 - **신청 상태**: 온통청년은 신청기간 코드(0057001 특정기간·0057002 상시·0057003 마감)를 먼저 보고, 없으면 날짜로 판단해요. 정부 혜택은 `신청기한` 문장에서 날짜와 "상시"를 읽어요.
 - **키 처리**: 키가 없거나 거부되면 그 출처만 건너뛰고 저장된 목록은 그대로 둬요(타이머 실패로 쌓지 않아요). 상태는 `/api/policies`의 `sources`에 `ok / no-key / invalid-key / error`로 나와요.
 - **목록 제목**: 같은 이름의 정책(여러 구의 "청년 월세 지원" 등)은 지역이나 기관 이름을 붙여 줄마다 달라요. 첫 화면 목록은 3개만 보이고 나머지는 더보기예요.
@@ -56,13 +56,13 @@ npm run collect     # 실제 API로 한 번 수집
 npm run regions     # 지역 목록 다시 확인(shared/regions.json)
 ```
 
-[localhost:5175](http://localhost:5175)에서 확인해요. 브라우저에서 "내 주소로 찾기"는 옛 주소 예시(광주광역시 북구)를 써요.
+[localhost:5175](http://localhost:5175)에서 확인해요. 동 이름 검색은 `JUSO_API_KEY`가 있어야 해요.
 
 ## 검증
 
 ```powershell
-npm test            # 지역·정렬·출처 변환·API·수집·알림 단위 테스트 29개
-npm run test:e2e    # Edge 375·768·1440px 흐름 14개 (스크린샷 docs/screenshots 갱신)
+npm test            # 지역·정렬·출처 변환·API·수집·알림 단위 테스트 30개
+npm run test:e2e    # Edge 375·768·1440px 흐름 16개 (스크린샷 docs/screenshots 갱신)
 npm run build       # 출시용: 설정 검사 → 콘솔 스크린샷 3장 → 타입 검사 → 번들 → policy.ait
 npx ait deploy -m "<대표 커밋 메시지>"
 ```
@@ -71,7 +71,7 @@ npx ait deploy -m "<대표 커밋 메시지>"
 
 ## 배포 (BlueCL)
 
-현재 서버 릴리스 `policy-20261029010023`(2026-10-29 설치), 앱 번들 deploymentId `01a1852c-b7f2-7c0f-b0ff-c0a0977dcee7`. 정부 혜택 9,933건 수집 중(온통청년은 운영 승인 대기).
+현재 서버 릴리스 `policy-20261029011001`(2026-10-29 설치), 앱 번들 deploymentId `01a18535-b8f3-7c4c-a7e5-fcb487c3339b`. 정부 혜택 9,933건 수집 중(온통청년은 운영 승인 대기).
 
 `/home/solty/dev/policy/{releases,current,node,data,.env}`, API 포트 `18826`, 공개 경로 `https://bluecl.cloud/policy/api/`. Node는 gongmodu와 같은 `node` 링크(v24)를 써요.
 
@@ -116,4 +116,4 @@ deploy/              systemd · nginx · release.sh
 - 정부·지자체·토스와 관련 없는 개인 서비스예요. 앱 하단과 약관에 표시돼요.
 - 데이터 출처: 한국고용정보원 온통청년, 행정안전부 대한민국 공공서비스 정보·도로명주소. 화면 하단에 출처와 기준일을 보여 줘요. 비공식 스크래핑(예: 온통청년 홈페이지 내부 순위 주소)은 쓰지 않아요.
 - 정부 혜택은 `소관기관유형`·`소관기관명`으로 지역을 정해요. 중앙행정기관·공공기관은 전국, 광역시도는 시·도 전체, 시군구는 그 시·군·구예요. 이름에 지역이 없는 지자체 출연기관("(재)부천산업진흥원")은 같은 `소관기관코드`를 쓰는 지자체에서 지역을 배워요. 그래도 못 찾으면 잘못된 지역에 보이지 않게 목록에서 빼요(전체 10,942건 중 법인 대상 등 약 1,000건 제외). 신청기한은 `신청기한유형`(상시신청)과 문장 속 날짜(`20250901~20251001`, `2026. 3. 23. ~ 12. 11.` 등)를 읽어요.
-- 실기기 토스 앱에서 주소 동의·알림 동의·메시지 수신은 콘솔 설정 뒤 직접 확인해야 해요.
+- 실기기 토스 앱에서 알림 동의·메시지 수신은 콘솔 설정 뒤 직접 확인해야 해요.
