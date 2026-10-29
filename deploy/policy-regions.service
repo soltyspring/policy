@@ -1,0 +1,14 @@
+[Unit]
+Description=Refresh region list from the road-name address API
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/solty/dev/policy/current
+Environment=NODE_ENV=production
+Environment=NODE_NO_WARNINGS=1
+EnvironmentFile=/home/solty/dev/policy/.env
+ExecStart=/home/solty/dev/policy/node/bin/node node_modules/tsx/dist/cli.mjs scripts/build-regions.ts
+TimeoutStartSec=10min
+NoNewPrivileges=true
+UMask=0077

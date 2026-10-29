@@ -1,0 +1,18 @@
+[Unit]
+Description=Policy finder API
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/solty/dev/policy/current
+Environment=NODE_ENV=production
+Environment=NODE_NO_WARNINGS=1
+EnvironmentFile=/home/solty/dev/policy/.env
+ExecStart=/home/solty/dev/policy/node/bin/node node_modules/tsx/dist/cli.mjs server/index.ts
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

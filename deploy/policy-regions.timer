@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh region list weekly
+
+[Timer]
+OnCalendar=Mon *-*-* 04:40:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=policy-regions.service
+
+[Install]
+WantedBy=timers.target

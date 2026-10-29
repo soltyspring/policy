@@ -1,0 +1,14 @@
+[Unit]
+Description=Collect youth policies and government benefits
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/solty/dev/policy/current
+Environment=NODE_ENV=production
+Environment=NODE_NO_WARNINGS=1
+EnvironmentFile=/home/solty/dev/policy/.env
+ExecStart=/usr/bin/flock -n /home/solty/dev/policy/data/collect.lock /home/solty/dev/policy/node/bin/node node_modules/tsx/dist/cli.mjs scripts/collect.ts
+TimeoutStartSec=15min
+NoNewPrivileges=true
+UMask=0077

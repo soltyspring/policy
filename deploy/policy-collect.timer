@@ -1,0 +1,11 @@
+[Unit]
+Description=Collect policies every 6 hours
+
+[Timer]
+OnCalendar=*-*-* 00/6:17:00
+Persistent=true
+RandomizedDelaySec=120
+Unit=policy-collect.service
+
+[Install]
+WantedBy=timers.target

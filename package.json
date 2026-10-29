@@ -1,0 +1,43 @@
+{
+  "name": "policy-finder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,app \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch --env-file-if-exists=backend/.env --env-file-if-exists=.env server/index.ts",
+    "dev:web": "vite --host 0.0.0.0 --port 5175",
+    "typecheck": "tsc --noEmit",
+    "build:web": "npm run typecheck && vite build",
+    "build": "node --env-file-if-exists=.env.production scripts/check-release.mjs && npm run shots && npm run build:web && ait build",
+    "bundle:preview": "npm run build:web && ait build",
+    "start": "tsx --env-file-if-exists=backend/.env --env-file-if-exists=.env server/index.ts",
+    "collect": "tsx --env-file-if-exists=backend/.env --env-file-if-exists=.env scripts/collect.ts",
+    "regions": "tsx --env-file-if-exists=backend/.env --env-file-if-exists=.env scripts/build-regions.ts",
+    "logo": "tsx scripts/make-logo.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "playwright test --project=mobile --project=tablet --project=desktop",
+    "shots": "playwright test --project=store"
+  },
+  "dependencies": {
+    "@apps-in-toss/web-framework": "3.9.0",
+    "express": "5.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.5",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "concurrently": "9.2.5",
+    "typescript": "5.9.3",
+    "vite": "6.4.5"
+  }
+}
