@@ -77,11 +77,17 @@ test('정렬과 조건', async ({ page }) => {
   await sheet.getByRole('radio', { name: '조회 많은순' }).click();
   await expect(sheet).toBeHidden();
   await expect(rows(page).first()).toContainText('청년도약계좌');
-  // 정부 혜택만
-  await page.getByRole('group', { name: '종류' }).getByRole('button', { name: '정부 혜택' }).click();
-  await expect(rows(page).first()).toContainText('첫만남이용권');
+  // 청년 대상만: 청년과 관계없는 혜택(첫만남이용권)은 빠져요
+  const target = page.getByRole('group', { name: '대상' });
+  await target.getByRole('button', { name: '청년 대상' }).click();
+  await page.getByRole('button', { name: /더보기/ }).click();
+  await expect(page.locator('.policy-row', { hasText: '첫만남이용권' })).toHaveCount(0);
+  await target.getByRole('button', { name: '모든 대상' }).click();
+  await page.getByRole('button', { name: /더보기/ }).click();
+  await expect(page.locator('.policy-row', { hasText: '첫만남이용권' })).toHaveCount(1);
+  await page.getByRole('button', { name: '접기' }).click();
   // 신청 가능한 것만을 풀면 마감된 정책도 보여요
-  await page.getByRole('group', { name: '종류' }).getByRole('button', { name: '청년정책' }).click();
+  await target.getByRole('button', { name: '청년 대상' }).click();
   const more = page.getByRole('button', { name: /더보기 \(\d+개\)/ });
   const before = await more.innerText();
   await page.getByText('신청 가능한 것만').click();

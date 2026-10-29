@@ -47,6 +47,9 @@ test('지역 필터: 전국 정책 + 시·도 전체 + 고른 구', () => {
   assert.ok(ids({ sido: '12' }).includes('y-demo11')); // 시·도만 고르면 모든 구
   assert.ok(!ids({ open: true }).includes('y-demo10')); // 마감 빼기
   assert.deepEqual(ids({ source: 'gov24' }).every(id => id.startsWith('g-')), true);
+  const youth = ids({ youth: true });
+  assert.ok(youth.includes('y-demo4') && youth.includes('g-demo5')); // 온통청년 정책 + 제목에 청년이 있는 혜택
+  assert.ok(!youth.includes('g-demo1'));                               // 첫만남이용권
   assert.deepEqual(ids({ field: 'housing' }).sort(), ['y-demo1', 'y-demo9']);
 });
 
