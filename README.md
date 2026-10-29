@@ -1,6 +1,8 @@
 # policy · 동네 정책 찾기
 
-고른 지역(시·도 → 시·군·구)에서 지금 신청할 수 있는 청년정책과 정부 혜택을 모아 보여 주는 앱인토스 미니앱이에요. 마감 임박순·최근 등록순·조회 많은순·이름순으로 정렬하고, 종류·분야·신청 가능 여부로 거를 수 있어요.
+고른 지역(시·도 → 시·군·구)에서 지금 신청할 수 있는 정부·지자체 혜택을 모아 보여 주는 앱인토스 미니앱이에요. 마감 임박순·최근 등록순·조회 많은순·이름순으로 정렬하고, 대상(모든 대상/청년 대상)·분야·신청 가능 여부·우리 지역만으로 거를 수 있어요.
+
+지금 데이터는 정부24 공공서비스(혜택) API예요. "청년 대상"은 제목·대상·설명에 "청년"이 있는 혜택이에요(약 500건). 온통청년 청년정책 수집기는 만들어 두었지만 공공데이터포털 운영 승인이 나기 전까지는 키가 거부돼서 건너뛰어요. 승인되면 키만 넣으면 함께 모여요.
 
 <img src="docs/screenshots/mobile-home.png" width="220" alt="홈" /> <img src="docs/screenshots/mobile-region.png" width="220" alt="지역 고르기" /> <img src="docs/screenshots/mobile-detail.png" width="220" alt="정책 상세" />
 
@@ -69,7 +71,7 @@ npx ait deploy -m "<대표 커밋 메시지>"
 
 ## 배포 (BlueCL)
 
-현재 서버 릴리스 `policy-20261029005258`(2026-10-29 설치), 앱 번들 deploymentId `01a18525-a67a-7773-9e6a-5339ad98aa77`. 정부 혜택 9,933건 수집 중(온통청년은 키 승인 대기).
+현재 서버 릴리스 `policy-20261029010023`(2026-10-29 설치), 앱 번들 deploymentId `01a1852c-b7f2-7c0f-b0ff-c0a0977dcee7`. 정부 혜택 9,933건 수집 중(온통청년은 운영 승인 대기).
 
 `/home/solty/dev/policy/{releases,current,node,data,.env}`, API 포트 `18826`, 공개 경로 `https://bluecl.cloud/policy/api/`. Node는 gongmodu와 같은 `node` 링크(v24)를 써요.
 
