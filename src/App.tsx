@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   applyLabel, applyState, daysLeft, FIELD_LABELS, FIELDS, SORT_KEYS, SORT_LABELS, SOURCE_LABELS,
-  type Field, type Policy, type SortKey, type Source, type SubscriptionState,
+  type Field, type Policy, type SortKey, type SubscriptionState,
 } from '../shared/policy';
 import { createRegionIndex, REGIONS, type RegionData, type Sido } from '../shared/regions';
 import { api, ApiError, type AppConfig, type ListResponse } from './api';
@@ -42,7 +42,7 @@ export default function App() {
   const idx = useMemo(() => createRegionIndex(regionData), [regionData]);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [picked, setPicked] = useState<Picked>(readPicked);
-  const [source, setSource] = useState<Source | undefined>();
+  const [youthOnly, setYouthOnly] = useState(false);
   const [field, setField] = useState<Field | undefined>();
   const [openOnly, setOpenOnly] = useState(true);
   /** 지역을 골랐을 때 전국 정책을 빼고 볼지 */
@@ -61,7 +61,7 @@ export default function App() {
   sheetRef.current = sheet;
 
   const notifyOn = !!config?.notify && !forceNotifyOff;
-  const query = useMemo(() => ({ sido: picked.sido ?? undefined, sgg: picked.sgg ?? undefined, source, field, open: openOnly, national: !(picked.sido && localOnly), sort }), [picked, source, field, openOnly, localOnly, sort]);
+  const query = useMemo(() => ({ sido: picked.sido ?? undefined, sgg: picked.sgg ?? undefined, youth: youthOnly, field, open: openOnly, national: !(picked.sido && localOnly), sort }), [picked, youthOnly, field, openOnly, localOnly, sort]);
 
   const showToast = useCallback((text: string) => { setToast(text); window.setTimeout(() => setToast(t => (t === text ? null : t)), 2800); }, []);
 
@@ -180,7 +180,7 @@ export default function App() {
   const regionText = pickedLabel(picked, idx);
   const noData = !!list && list.total === 0 && list.sources.every(s => s.state !== 'ok');
   const subscribed = !!sub?.subscribed;
-  const resetFilters = () => { setSource(undefined); setField(undefined); setOpenOnly(false); setLocalOnly(false); };
+  const resetFilters = () => { setYouthOnly(false); setField(undefined); setOpenOnly(false); setLocalOnly(false); };
 
   return (
     <div className={`app ${notifyOn ? 'has-cta' : ''}`}>
@@ -199,7 +199,7 @@ export default function App() {
           </h1>
           <p className="hero-sub">
             {list && list.fresh > 0 ? `이번 주 새로 올라온 정책 ${list.fresh}개`
-              : '청년정책과 정부 혜택을 한곳에 모았어요'}
+              : '정부와 지자체 혜택을 한곳에 모았어요'}
           </p>
           {canLoadAddress() && (
             <button className="locate-button" onClick={() => void locateByAddress()} disabled={locating} aria-busy={locating}>
@@ -209,10 +209,10 @@ export default function App() {
         </section>
 
         <section className="card filters" aria-label="정책 조건">
-          <div className="segmented" role="group" aria-label="종류">
-            {([undefined, 'youth', 'gov24'] as const).map(s => (
-              <button key={s ?? 'all'} aria-pressed={source === s} className={source === s ? 'on' : ''} onClick={() => setSource(s)}>
-                {s ? SOURCE_LABELS[s] : '전체'}
+          <div className="segmented" role="group" aria-label="대상">
+            {([false, true] as const).map(y => (
+              <button key={String(y)} aria-pressed={youthOnly === y} className={youthOnly === y ? 'on' : ''} onClick={() => setYouthOnly(y)}>
+                {y ? '청년 대상' : '모든 대상'}
               </button>
             ))}
           </div>
@@ -270,7 +270,7 @@ export default function App() {
         <section className="card" aria-labelledby="how-title">
           <h2 id="how-title" className="section-title">이렇게 모아요</h2>
           <ol className="steps">
-            <Step icon="source" title="공식 데이터만 써요" text="온통청년과 정부24 공공데이터를 모아요." />
+            <Step icon="source" title="공식 데이터만 써요" text="정부24 공공서비스 공공데이터를 모아요." />
             <Step icon="refresh" title={`${config?.intervalHours ?? 6}시간마다 새로 확인해요`} text="마감된 정책은 따로 표시해요." />
             <Step icon="apply" title="신청은 공식 페이지에서 해요" text="조건과 서류는 담당 기관 안내를 따라요." />
           </ol>
@@ -283,7 +283,7 @@ export default function App() {
 
         <footer className="footer">
           <p>동네 정책 찾기는 정부·지자체와 관련 없는 개인 서비스예요. 실제 지원 조건과 신청 방법은 담당 기관의 공식 안내를 확인해 주세요.</p>
-          <p className="sources">자료: 한국고용정보원 온통청년, 행정안전부 대한민국 공공서비스 정보·도로명주소{list?.updatedAt ? ` · ${new Date(list.updatedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric' })} 기준` : ''}</p>
+          <p className="sources">자료: {sourceCredit(list)}{list?.updatedAt ? ` · ${new Date(list.updatedAt).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric' })} 기준` : ''}</p>
           <p className="footer-links">
             <button onClick={() => setSheet({ type: 'doc', kind: 'terms' })}>이용약관</button>
             <button onClick={() => setSheet({ type: 'doc', kind: 'privacy' })}>개인정보 처리방침</button>
@@ -347,6 +347,12 @@ export default function App() {
       {sheet?.type === 'doc' && <Sheet title={docTitle[sheet.kind]} onClose={() => setSheet(null)}><Doc kind={sheet.kind} /></Sheet>}
     </div>
   );
+}
+
+/** 실제로 쓰고 있는 출처만 적어요. */
+function sourceCredit(list: ListResponse | null) {
+  const ok = new Set(list?.sources.filter(s => s.state === 'ok').map(s => s.source));
+  return [ok.has('gov24') || !list ? '행정안전부 대한민국 공공서비스 정보' : null, ok.has('youth') ? '한국고용정보원 온통청년' : null, '도로명주소'].filter(Boolean).join(', ');
 }
 
 function PolicyRow({ policy, title, meta, onOpen }: { policy: Policy; title: string; meta: string; onOpen: () => void }) {
@@ -456,7 +462,7 @@ const docTitle = { terms: '이용약관', privacy: '개인정보 처리방침' }
 function Doc({ kind }: { kind: 'terms' | 'privacy' }) {
   const sections = {
     terms: [
-      ['서비스 안내', '동네 정책 찾기는 블루씨엘이 운영하며, 한국고용정보원 온통청년과 행정안전부 대한민국 공공서비스 정보의 공개 데이터를 6시간 간격으로 모아 지역별로 보여 드리는 무료 참고용 서비스예요. 정부·지자체·토스와 제휴하거나 승인받은 서비스가 아니에요.'],
+      ['서비스 안내', '동네 정책 찾기는 블루씨엘이 운영하며, 행정안전부 대한민국 공공서비스 정보 등 공공데이터를 6시간 간격으로 모아 지역별로 보여 드리는 무료 참고용 서비스예요. 정부·지자체·토스와 제휴하거나 승인받은 서비스가 아니에요.'],
       ['정보의 한계', '수집 주기와 원 데이터 상태에 따라 정책 내용이 늦게 바뀌거나 빠질 수 있어요. 지원 대상·금액·기간은 담당 기관이 정하며, 신청 전에 공식 안내를 꼭 확인해 주세요.'],
       ['알림', '새 정책 알림은 사용자가 고른 지역에 새 정책이 올라오면 하루 한 번까지 토스 메시지로 보내요. 알림 설정에서 언제든 끌 수 있어요.'],
       ['변경과 문의', '서비스 내용이 바뀌거나 중단될 수 있으며 중요한 변경은 시행 7일 전에 앱에서 알려 드려요. 문의: bluecl@bluecl.cloud'],

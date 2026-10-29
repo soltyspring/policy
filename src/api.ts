@@ -37,6 +37,7 @@ export function queryString(q: PolicyQuery & { offset?: number; limit?: number }
   if (q.field) p.set('field', q.field);
   if (q.source) p.set('source', q.source);
   if (q.open) p.set('open', '1');
+  if (q.youth) p.set('youth', '1');
   if (q.national === false) p.set('national', '0');
   if (q.q) p.set('q', q.q);
   if (q.sort) p.set('sort', q.sort);

@@ -102,6 +102,8 @@ export interface PolicyQuery {
   sgg?: string;
   field?: Field;
   source?: Source;
+  /** 청년 대상만(온통청년 정책 + 제목·대상에 "청년"이 있는 혜택) */
+  youth?: boolean;
   /** 신청할 수 있는 것만(마감 제외) */
   open?: boolean;
   /** 전국 정책을 함께 볼지 */
@@ -118,12 +120,16 @@ export function matchesRegion(p: Policy, sido?: string, sgg?: string, national =
   return p.sgg.includes(sgg);
 }
 
+/** 청년 대상 정책인지. 온통청년 정책은 모두 청년 대상이에요. */
+export const isYouth = (p: Policy) => p.source === 'youth' || /청년/.test(`${p.title} ${p.target} ${p.summary}`);
+
 export function filterPolicies(list: Policy[], q: PolicyQuery, today = kstDate()) {
   const words = (q.q ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
   return list.filter(p =>
     matchesRegion(p, q.sido, q.sgg, q.national !== false)
     && (!q.field || p.field === q.field)
     && (!q.source || p.source === q.source)
+    && (!q.youth || isYouth(p))
     && (!q.open || applyState(p, today) !== 'closed')
     && words.every(w => `${p.title} ${p.agency} ${p.summary}`.toLowerCase().includes(w)));
 }
@@ -157,6 +163,7 @@ export function parseQuery(input: Record<string, unknown>): PolicyQuery {
     field: field && field in FIELD_LABELS ? (field as Field) : undefined,
     source: source && source in SOURCE_LABELS ? (source as Source) : undefined,
     open: s('open') === '1' || s('open') === 'true',
+    youth: s('youth') === '1' || s('youth') === 'true',
     national: s('national') !== '0' && s('national') !== 'false',
     q: (s('q') ?? '').slice(0, 40) || undefined,
     sort: sort && sort in SORT_LABELS ? (sort as SortKey) : 'deadline',
