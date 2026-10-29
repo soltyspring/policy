@@ -7,6 +7,7 @@ import { seedDemo, demoPolicies } from '../server/demo.ts';
 import { createTossClient, mockCaller, unavailableToss } from '../server/toss.ts';
 import { collectOnce } from '../server/collector.ts';
 import { createRegionIndex } from '../shared/regions.ts';
+import { fromLiteRows, LITE_FIELDS } from '../shared/policy.ts';
 import { SourceError, type PolicySource, type RawPolicy } from '../server/sources/types.ts';
 
 const regions = createRegionIndex();
@@ -25,6 +26,24 @@ async function serve(opts: Partial<Parameters<typeof createApp>[0]> = {}) {
   };
   return { store, call, close: () => new Promise(r => server.close(r)), log };
 }
+
+test('가벼운 목록 API: 지역별 한 번에, 칸 이름 없이 줄 배열, 바뀌기 전엔 304', async () => {
+  const s = await serve();
+  try {
+    const all = await s.call('/api/index');
+    assert.equal(all.status, 200);
+    const items = fromLiteRows(all.body.rows);
+    assert.equal(items.length, demoPolicies().length);
+    assert.deepEqual(all.body.fields, [...LITE_FIELDS]);
+    assert.ok(items.every(p => typeof p.youth === 'boolean' && !('benefit' in p)));
+    const bukgu = fromLiteRows((await s.call('/api/index?sido=12&sgg=12300')).body.rows);
+    assert.ok(bukgu.every(p => p.scope === 'national' || p.sido.includes('12')));
+    assert.ok(!bukgu.some(p => p.sgg.includes('12330'))); // 광산구 정책은 빠져요
+    // 같은 데이터면 304
+    const etag = all.headers.get('etag')!;
+    assert.equal((await s.call('/api/index', { headers: { 'if-none-match': etag } })).status, 304);
+  } finally { await s.close(); }
+});
 
 test('목록 API: 지역·정렬·쪽 나누기', async () => {
   const s = await serve();

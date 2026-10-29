@@ -7,24 +7,23 @@ test.beforeEach(async ({ page }) => {
 const shot = (name: string, project: string) => `docs/screenshots/${project}-${name}.png`;
 const rows = (page: Page) => page.locator('.policy-row');
 
+const regionBtn = (page: Page) => page.getByRole('button', { name: /^지역:/ });
+const regionSheet = (page: Page) => page.getByRole('dialog', { name: '지역 고르기' });
 async function pickRegion(page: Page, sido: string, sgg: string) {
-  await page.getByRole('button', { name: /^시·도:/ }).click();
-  const sheet = page.getByRole('dialog', { name: '동네 고르기' });
+  await regionBtn(page).click();
+  const sheet = regionSheet(page);
+  if (await sheet.getByRole('button', { name: '시·도', exact: true }).count()) await sheet.getByRole('button', { name: '시·도', exact: true }).click();
   await sheet.getByRole('button', { name: sido, exact: true }).click();
   await sheet.getByRole('button', { name: sgg, exact: true }).click();
   await expect(sheet).toBeHidden();
 }
-const sidoBox = (page: Page) => page.getByRole('button', { name: /^시·도:/ });
-const sggBox = (page: Page) => page.getByRole('button', { name: /^시·군·구:/ });
 
-test('홈: 처음엔 동네 고르기가 첫 화면, 목록은 최근 3개·더보기', async ({ page }, info) => {
+test('홈: 지역을 고르지 않아도 전국 정책을 바로 보여 줘요, 목록은 최근 3개·더보기', async ({ page }, info) => {
   await page.goto('/?notify=0');
-  // 제목·설명·선택 칸이 각각 다른 일을 해요
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('사는 동네를골라 주세요');
-  await expect(page.locator('.hero-sub')).toContainText(/전국 혜택 \d+개 중 우리 동네 것만/);
-  await expect(sidoBox(page)).toContainText('선택');
-  await expect(sggBox(page)).toContainText('선택');
-  await expect(page.getByRole('searchbox')).toHaveCount(0); // 입력창 없이 선택만
+  await expect(regionBtn(page)).toHaveText('전국');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
+  // 고르라고 재촉하는 문구는 없어요
+  await expect(page.locator('main')).not.toContainText(/골라 주세요|선택해 주세요|알려 주세요/);
   await expect(rows(page)).toHaveCount(3);
   const titles = await page.locator('.policy-texts strong').allInnerTexts();
   expect(new Set(titles).size).toBe(titles.length);
@@ -40,56 +39,69 @@ test('홈: 처음엔 동네 고르기가 첫 화면, 목록은 최근 3개·더�
   await expect(rows(page)).toHaveCount(3);
 });
 
-test('지역: 시·도를 고르면 바로 시·군·구 목록, 고르면 그 지역과 전국 정책만', async ({ page }, info) => {
+test('지역: 버튼 하나 → 시·도 → 그 시·도의 시·군·구, 다시 열면 같은 시·도 목록부터', async ({ page }, info) => {
   await page.goto('/?notify=0');
-  // 시·군·구 칸을 먼저 눌러도 시·도부터 물어봐요
-  await sggBox(page).click();
-  const sheet = page.getByRole('dialog', { name: '동네 고르기' });
-  await expect(sheet.getByRole('heading', { name: '어느 시·도에 사세요?' })).toBeVisible();
-  await expect(sheet.getByRole('button', { name: '전남광주', exact: true })).toBeVisible();
+  await regionBtn(page).click();
+  const sheet = regionSheet(page);
+  await expect(sheet.getByRole('heading', { name: '어느 지역 정책을 볼까요?' })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: '전국', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(sheet.getByRole('button', { name: '광주', exact: true })).toHaveCount(0); // 2026년 통합
   await page.screenshot({ path: shot('region', info.project.name), animations: 'disabled' });
+  await sheet.getByRole('button', { name: '경기', exact: true }).click();
+  // 같은 시트에서 경기도의 시·군·구가 나와요
+  await expect(sheet.getByRole('heading', { name: '경기도' })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: '수원시', exact: true })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: '경기 전체', exact: true })).toBeFocused();
+  // 시·도로 돌아가서 전남광주 북구
+  await sheet.getByRole('button', { name: '시·도', exact: true }).click();
   await sheet.getByRole('button', { name: '전남광주', exact: true }).click();
-  await expect(sheet.getByRole('button', { name: '전남광주 전체', exact: true })).toBeFocused(); // 초점이 시·군·구 목록으로 가요
   await sheet.getByRole('button', { name: '북구', exact: true }).click();
+  await expect(sheet).toBeHidden();
   await expect(page.getByRole('status')).toHaveText('전남광주 북구 정책을 보여 드릴게요');
-  await expect(sidoBox(page)).toContainText('전남광주');
-  await expect(sggBox(page)).toContainText('북구');
-  // 고른 뒤 첫 화면: 개수 / 이번 주 새 정책 / 동네
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
-  // 새 정책 수를 누르면 최근 등록순으로 바뀌어요
-  await page.getByRole('button', { name: /이번 주 새로 올라온 정책 \d+개/ }).click();
-  await expect(page.locator('#list-title')).toHaveText('새로 올라온 정책');
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(regionBtn(page)).toHaveText('전남광주 북구');
+  await expect(regionBtn(page)).toBeFocused(); // 시트를 닫으면 초점이 지역 버튼으로 돌아와요
   await page.screenshot({ path: shot('town', info.project.name), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: /더보기/ }).click();
-  const meta = await page.locator('.policy-texts span').allInnerTexts();
-  for (const m of meta) expect(m).toMatch(/전국|전남광주/);
+  for (const m of await page.locator('.policy-texts span').allInnerTexts()) expect(m).toMatch(/전국|전남광주/);
   // 우리 지역만: 전국 정책을 빼요
   await page.getByText('우리 지역만').click();
-  await expect(page.locator('.policy-texts span').first()).not.toContainText('전국');
-  const local = await page.locator('.policy-texts span').allInnerTexts();
-  for (const m of local) expect(m).not.toMatch(/전국/);
+  for (const m of await page.locator('.policy-texts span').allInnerTexts()) expect(m).not.toMatch(/전국/);
   await page.getByText('우리 지역만').click();
-  // 시·군·구 칸은 그 시·도의 목록을 바로 열어요
-  await sggBox(page).click();
+  // 다시 열면 전남광주 시·군·구 목록부터(고른 칸 표시)
+  await regionBtn(page).click();
   await expect(sheet.getByRole('heading', { name: '전남광주통합특별시' })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: '북구', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await sheet.getByRole('button', { name: '광산구', exact: true }).click();
-  await expect(sggBox(page)).toContainText('광산구');
+  await expect(regionBtn(page)).toHaveText('전남광주 광산구');
   await page.reload();
-  await expect(sggBox(page)).toContainText('광산구');
-  // 모든 지역으로 돌아가기
-  await sidoBox(page).click();
-  await sheet.getByRole('button', { name: '모든 지역', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('사는 동네를골라 주세요');
+  await expect(regionBtn(page)).toHaveText('전남광주 광산구');
+  // 전국으로 돌아가기
+  await regionBtn(page).click();
+  await sheet.getByRole('button', { name: '시·도', exact: true }).click();
+  await sheet.getByRole('button', { name: '전국', exact: true }).click();
+  await expect(regionBtn(page)).toHaveText('전국');
 });
 
 test('지역: 세종은 시·군·구 없이 바로 골라져요', async ({ page }) => {
   await page.goto('/?notify=0');
-  await sidoBox(page).click();
-  await page.getByRole('dialog', { name: '동네 고르기' }).getByRole('button', { name: '세종', exact: true }).click();
-  await expect(sggBox(page)).toContainText('세종시');
-  await expect(sggBox(page)).toBeDisabled();
+  await regionBtn(page).click();
+  await regionSheet(page).getByRole('button', { name: '세종', exact: true }).click();
+  await expect(regionBtn(page)).toHaveText('세종');
+});
+
+test('빠르기: 분야·조건·정렬을 바꿔도 서버를 다시 부르지 않아요', async ({ page }) => {
+  const calls: string[] = [];
+  page.on('request', r => { if (/\/api\/(index|policies)/.test(r.url())) calls.push(r.url()); });
+  await page.goto('/?notify=0');
+  await expect(rows(page).first()).toBeVisible();
+  const before = calls.length;
+  await page.getByRole('group', { name: '분야' }).getByRole('button', { name: '주거' }).click();
+  await page.getByRole('group', { name: '분야' }).getByRole('button', { name: '교육' }).click();
+  await page.getByText('청년 대상', { exact: true }).click();
+  await page.getByRole('button', { name: /^정렬:/ }).click();
+  await page.getByRole('dialog', { name: '정렬' }).getByRole('radio', { name: '이름순' }).click();
+  await expect(page.locator('#list-title')).toHaveText('가나다순 정책');
+  expect(calls.length).toBe(before);
 });
 
 test('정렬과 조건', async ({ page }) => {

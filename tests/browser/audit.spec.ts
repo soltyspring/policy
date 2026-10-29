@@ -72,13 +72,17 @@ function report(name: string, issues: string[]) {
   return uniq;
 }
 
-test('점검: 처음 화면(동네 고르기 전)', async ({ page }) => {
+test('점검: 처음 화면(전국)', async ({ page }) => {
   await page.goto('/?notify=0');
   await expect(page.locator('.policy-row').first()).toBeVisible();
   const issues: string[] = [];
   const vh = page.viewportSize()!.height;
-  const sel = await page.getByRole('button', { name: /^시·도:/ }).boundingBox();
-  if (!sel || sel.y + sel.height > vh) issues.push(`동네 선택이 접힘선(${vh}px) 아래에 있어요(${Math.round((sel?.y ?? 0) + (sel?.height ?? 0))}px)`);
+  const sel = await page.getByRole('button', { name: /^지역:/ }).boundingBox();
+  if (!sel || sel.y + sel.height > vh) issues.push(`지역 버튼이 접힘선(${vh}px) 아래에 있어요`);
+  // 지역은 고르지 않아도 돼요: 재촉하는 문구나 비어 있는 선택 칸 강조가 없어야 해요
+  const hero = await page.locator('.hero').innerText();
+  if (/골라 주세요|선택해 주세요|알려 주세요/.test(hero)) issues.push('첫 화면이 지역 고르기를 재촉해요');
+  if (await page.locator('.hero .region-select, .hero .is-empty').count()) issues.push('비어 있는 선택 칸을 강조해요');
   const firstRow = await page.locator('.policy-row').first().boundingBox();
   if (!firstRow || firstRow.y + firstRow.height > vh) issues.push(`첫 정책이 접힘선 아래에 있어요(${Math.round((firstRow?.y ?? 0) + (firstRow?.height ?? 0))}px)`);
   const sortInList = await page.locator('section[aria-labelledby="list-title"]').getByRole('button', { name: /^정렬:/ }).count();
@@ -89,10 +93,10 @@ test('점검: 처음 화면(동네 고르기 전)', async ({ page }) => {
   expect(report('처음 화면', issues)).toEqual([]);
 });
 
-test('점검: 동네를 고른 뒤', async ({ page }) => {
+test('점검: 지역을 고른 뒤', async ({ page }) => {
   await page.goto('/?notify=0');
-  await page.getByRole('button', { name: /^시·도:/ }).click();
-  const sheet = page.getByRole('dialog', { name: '동네 고르기' });
+  await page.getByRole('button', { name: /^지역:/ }).click();
+  const sheet = page.getByRole('dialog', { name: '지역 고르기' });
   const issues: string[] = [...await contrastIssues(page, '.sheet-inner'), ...await tapIssues(page, '.sheet-inner')];
   await sheet.getByRole('button', { name: '전남광주', exact: true }).click();
   issues.push(...await contrastIssues(page, '.sheet-inner'), ...await tapIssues(page, '.sheet-inner'));
@@ -104,8 +108,10 @@ test('점검: 동네를 고른 뒤', async ({ page }) => {
   // 조건 칩은 한 줄에 들어가야 목록이 덜 밀려요
   const chipTops = await page.locator('.checks .check-chip').evaluateAll(els => [...new Set(els.map(e => Math.round(e.getBoundingClientRect().top)))]);
   if (chipTops.length > 1) issues.push(`조건 칩이 ${chipTops.length}줄로 꺾여요`);
-  // 동네를 고른 뒤에는 장식 그림 없이 목록이 더 빨리 보여야 해요
-  if (await page.locator('.hero .hero-art').count()) issues.push('동네를 고른 뒤에도 장식 그림이 목록을 밀어내요');
+  // 지역 버튼을 다시 누르면 같은 시·도의 시·군·구 목록부터 보여야 해요(한 번에 바꾸기)
+  await page.getByRole('button', { name: /^지역:/ }).click();
+  if (!(await sheet.getByRole('heading', { name: '전남광주통합특별시' }).count())) issues.push('다시 열 때 고른 시·도의 시·군·구 목록부터 보여 주지 않아요');
+  await page.keyboard.press('Escape');
   issues.push(...await contrastIssues(page, 'main'), ...await tapIssues(page, 'main'), ...await overflowIssue(page));
   expect(report('고른 뒤', issues)).toEqual([]);
 });

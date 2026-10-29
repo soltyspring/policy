@@ -10,9 +10,9 @@ import { basename } from 'node:path';
 const out = (name: string) => `docs/store/${name}.png`;
 
 const SHOTS = [
-  { file: 'screenshot-1', title: '사는 동네만<br>고르면 돼요', sub: '시·도와 시·군·구, 두 번이면 끝나요' },
-  { file: 'screenshot-2', title: '우리 동네 혜택을<br>마감 임박순으로', sub: '조회 많은순·최근 등록순·이름순도 있어요' },
-  { file: 'screenshot-3', title: '2026년에 바뀐<br>행정구역까지', sub: '전남광주통합특별시와 새로 생긴 구도 있어요' },
+  { file: 'screenshot-1', title: '정부·지자체 혜택을<br>한눈에 봐요', sub: '마감 임박순·조회 많은순으로 정리해요' },
+  { file: 'screenshot-2', title: '지역을 누르면<br>시·군·구까지', sub: '2026년에 바뀐 행정구역도 반영했어요' },
+  { file: 'screenshot-3', title: '우리 동네 혜택만<br>골라 볼 수 있어요', sub: '청년 대상·신청 가능만 따로 볼 수도 있어요' },
 ] as const;
 
 const FONT = `'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif`;
@@ -23,24 +23,25 @@ async function captureScreens(page: Page) {
   const opts = { animations: 'disabled' as const, type: 'png' as const };
   await expect(page.locator('.policy-row').first()).toBeVisible();
   await page.mouse.move(0, 0);
-  // 1) 처음 화면: 동네 고르기
+  // 1) 처음 화면(전국)
   const first = await page.screenshot(opts);
-  // 2) 동네를 고른 뒤 첫 화면
-  await page.getByRole('button', { name: /^시·도:/ }).click();
-  const sheet = page.getByRole('dialog', { name: '동네 고르기' });
+  // 2) 지역 → 경기 → 시·군·구 목록
+  await page.getByRole('button', { name: /^지역:/ }).click();
+  const sheet = page.getByRole('dialog', { name: '지역 고르기' });
+  await sheet.getByRole('button', { name: '경기', exact: true }).click();
+  await expect(sheet.getByRole('button', { name: '수원시', exact: true })).toBeVisible();
+  await page.locator('.sheet-inner').evaluate(el => el.scrollTo(0, 0));
+  await page.mouse.move(0, 0);
+  const region = await page.screenshot(opts);
+  // 3) 전남광주 북구를 고른 뒤 첫 화면
+  await sheet.getByRole('button', { name: '시·도', exact: true }).click();
   await sheet.getByRole('button', { name: '전남광주', exact: true }).click();
   await sheet.getByRole('button', { name: '북구', exact: true }).click();
   await expect(sheet).toBeHidden();
   await page.waitForTimeout(3000); // 안내 메시지가 사라질 때까지
   await page.mouse.move(0, 0);
   const home = await page.screenshot(opts);
-  // 3) 시·군·구 목록
-  await page.getByRole('button', { name: /^시·군·구:/ }).click();
-  await expect(sheet.getByRole('button', { name: '북구', exact: true })).toBeVisible();
-  await page.locator('.sheet-inner').evaluate(el => el.scrollTo(0, 0));
-  await page.mouse.move(0, 0);
-  const region = await page.screenshot(opts);
-  return [first, home, region].map(b => `data:image/png;base64,${b.toString('base64')}`);
+  return [first, region, home].map(b => `data:image/png;base64,${b.toString('base64')}`);
 }
 const phone = (src: string, width: number, cssExtra = '') => `
   <div class="phone" style="width:${width}px;${cssExtra}">
