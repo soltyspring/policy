@@ -81,6 +81,7 @@ test('정부 혜택: 기관 이름으로 지역 정하기', () => {
   assert.equal(normalizeGov24({ ...govRow, 소관기관명: '보건복지부', 소관기관유형: '중앙행정기관' }, idx)!.scope, 'national');
   assert.equal(normalizeGov24({ ...govRow, 소관기관명: '알수없는구청', 소관기관유형: '지방자치단체' }, idx), null);
   assert.equal(normalizeGov24({ ...govRow, 사용자구분: '법인/시설/단체' }, idx), null);
+  assert.equal(normalizeGov24({ ...govRow, 서비스명: '온라인 신청 시연 테스트(운영)' }, idx), null);
   // 공공기관은 이름에 지명이 있어도 전국
   assert.equal(normalizeGov24({ ...govRow, 소관기관명: '서울대학교병원', 소관기관유형: '공공기관' }, idx)!.scope, 'national');
   // 광역시도는 시·도 전체

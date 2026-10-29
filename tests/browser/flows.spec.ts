@@ -53,6 +53,12 @@ test('지역: 시·도 → 시·군·구를 고르면 그 지역과 전국 정�
   await page.getByRole('button', { name: /더보기/ }).click();
   const meta = await page.locator('.policy-texts span').allInnerTexts();
   for (const m of meta) expect(m).toMatch(/전국|전남광주/);
+  // 우리 지역만: 전국 정책을 빼요
+  await page.getByText('우리 지역만').click();
+  await expect(page.locator('.policy-texts span').first()).not.toContainText('전국');
+  const local = await page.locator('.policy-texts span').allInnerTexts();
+  for (const m of local) expect(m).not.toMatch(/전국/);
+  await page.getByText('우리 지역만').click();
   await page.reload();
   await expect(page.locator('.region-chip')).toHaveText('전남광주 북구');
 });
