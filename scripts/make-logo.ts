@@ -47,9 +47,11 @@ const svg = `
 mkdirSync('docs/brand', { recursive: true });
 mkdirSync('public', { recursive: true });
 const browser = await chromium.launch({ channel: 'msedge' });
-for (const [size, path] of [[600, 'docs/brand/logo-600.png'], [256, 'public/logo.png']] as const) {
+// 다크모드 로고: 같은 그림을 어두운 바탕에. 앞 카드와 배지는 그대로 밝게 두고 바탕과 빛만 바꿔요.
+const dark = svg.replace('<rect width="600" height="600" fill="#ffffff"/>', '<rect width="600" height="600" fill="#17171c"/>').replace('opacity=".22" filter="url(#glow)"', 'opacity=".35" filter="url(#glow)"');
+for (const [size, path, art, bg] of [[600, 'docs/brand/logo-600.png', svg, '#fff'], [256, 'public/logo.png', svg, '#fff'], [600, 'docs/brand/logo-600-dark.png', dark, '#17171c']] as const) {
   const page = await browser.newPage({ viewport: { width: size, height: size } });
-  await page.setContent(`<html><body style="margin:0;background:#fff">${svg.replace('width="600" height="600"', `width="${size}" height="${size}"`)}</body></html>`);
+  await page.setContent(`<html><body style="margin:0;background:${bg}">${art.replace('width="600" height="600"', `width="${size}" height="${size}"`)}</body></html>`);
   await page.screenshot({ path, type: 'png', omitBackground: false });
   await page.close();
   console.log(`${path} (${size}×${size})`);
