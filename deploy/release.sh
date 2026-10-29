@@ -13,7 +13,7 @@ if [ -n "$prev_link" ]; then cp -a "$prev_link/node_modules" "$rel/" 2>/dev/null
 cd "$rel"
 npm ci --omit=dev --ignore-scripts --no-audit --no-fund 2>&1 | tail -1
 # 서버 쪽 단위 테스트(외부 API 없이). 실패하면 current를 바꾸지 않아요.
-if ! out=$(node node_modules/tsx/dist/cli.mjs --test tests/regions.test.ts tests/sources.test.ts tests/server.test.ts 2>&1); then
+if ! out=$(node node_modules/tsx/dist/cli.mjs --test --test-reporter=tap tests/regions.test.ts tests/sources.test.ts tests/server.test.ts 2>&1); then
   echo "$out" | grep -E '^# (pass|fail)|not ok' || true
   echo "TEST_FAILED (current 유지: ${prev_link:-없음})"; exit 1
 fi
