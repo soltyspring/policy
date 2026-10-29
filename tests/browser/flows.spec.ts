@@ -22,7 +22,8 @@ test('홈: 지역을 고르지 않아도 전국 정책을 바로 보여 줘요, 
   await page.goto('/?notify=0');
   await expect(regionBtn(page)).toHaveText('전국');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
-  // 고르라고 재촉하는 문구는 없어요
+  // 고르라고 재촉하는 문구나 꼭 필요하지 않은 안내 카드는 없어요
+  await expect(page.getByText(/이렇게 모아요|친구가 있나요|한곳에 모았어요/)).toHaveCount(0);
   await expect(page.locator('main')).not.toContainText(/골라 주세요|선택해 주세요|알려 주세요/);
   await expect(rows(page)).toHaveCount(3);
   const titles = await page.locator('.policy-texts strong').allInnerTexts();
@@ -43,7 +44,7 @@ test('지역: 버튼 하나 → 시·도 → 그 시·도의 시·군·구, 다�
   await page.goto('/?notify=0');
   await regionBtn(page).click();
   const sheet = regionSheet(page);
-  await expect(sheet.getByRole('heading', { name: '어느 지역 정책을 볼까요?' })).toBeVisible();
+  await expect(sheet.getByRole('heading', { name: '지역', exact: true })).toBeVisible();
   await expect(sheet.getByRole('button', { name: '전국', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(sheet.getByRole('button', { name: '광주', exact: true })).toHaveCount(0); // 2026년 통합
   await page.screenshot({ path: shot('region', info.project.name), animations: 'disabled' });
@@ -57,7 +58,7 @@ test('지역: 버튼 하나 → 시·도 → 그 시·도의 시·군·구, 다�
   await sheet.getByRole('button', { name: '전남광주', exact: true }).click();
   await sheet.getByRole('button', { name: '북구', exact: true }).click();
   await expect(sheet).toBeHidden();
-  await expect(page.getByRole('status')).toHaveText('전남광주 북구 정책을 보여 드릴게요');
+  await expect(page.getByRole('status')).toHaveCount(0); // 지역 버튼이 바뀌니 따로 알리지 않아요
   await expect(regionBtn(page)).toHaveText('전남광주 북구');
   await expect(regionBtn(page)).toBeFocused(); // 시트를 닫으면 초점이 지역 버튼으로 돌아와요
   await page.screenshot({ path: shot('town', info.project.name), fullPage: true, animations: 'disabled' });
@@ -100,7 +101,7 @@ test('빠르기: 분야·조건·정렬을 바꿔도 서버를 다시 부르지 
   await page.getByText('청년 대상', { exact: true }).click();
   await page.getByRole('button', { name: /^정렬:/ }).click();
   await page.getByRole('dialog', { name: '정렬' }).getByRole('radio', { name: '이름순' }).click();
-  await expect(page.locator('#list-title')).toHaveText('가나다순 정책');
+  await expect(page.getByRole('button', { name: /^정렬:/ })).toHaveText('이름순');
   expect(calls.length).toBe(before);
 });
 
@@ -126,7 +127,7 @@ test('정렬과 조건', async ({ page }) => {
   const before = await more.innerText();
   await page.getByText('신청 가능', { exact: true }).click();
   await expect(more).not.toHaveText(before);
-  await expect(page.locator('#list-title')).toHaveText('많이 본 정책'); // 목록 제목은 개수 대신 정렬 기준
+  await expect(page.getByRole('button', { name: /^정렬:/ })).toHaveText('조회 많은순');
   // 분야
   await page.getByRole('group', { name: '분야' }).getByRole('button', { name: '주거' }).click();
   await expect(rows(page)).toHaveCount(2);
