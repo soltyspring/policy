@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRegionIndex } from '../shared/regions.ts';
 import { normalizeYouth, regionOfCodes, youthSource } from '../server/sources/youth.ts';
-import { gov24Source, normalizeGov24, parseDeadline } from '../server/sources/gov24.ts';
+import { buildCodebook, gov24Source, normalizeGov24, parseDeadline } from '../server/sources/gov24.ts';
 import { SourceError } from '../server/sources/types.ts';
 import { cleanKeyword } from '../server/juso.ts';
 
@@ -81,10 +81,28 @@ test('정부 혜택: 기관 이름으로 지역 정하기', () => {
   assert.equal(normalizeGov24({ ...govRow, 소관기관명: '보건복지부', 소관기관유형: '중앙행정기관' }, idx)!.scope, 'national');
   assert.equal(normalizeGov24({ ...govRow, 소관기관명: '알수없는구청', 소관기관유형: '지방자치단체' }, idx), null);
   assert.equal(normalizeGov24({ ...govRow, 사용자구분: '법인/시설/단체' }, idx), null);
+  // 공공기관은 이름에 지명이 있어도 전국
+  assert.equal(normalizeGov24({ ...govRow, 소관기관명: '서울대학교병원', 소관기관유형: '공공기관' }, idx)!.scope, 'national');
+  // 광역시도는 시·도 전체
+  const sido = normalizeGov24({ ...govRow, 소관기관명: '전남광주통합특별시', 소관기관유형: '광역시도' }, idx)!;
+  assert.deepEqual([sido.sido, sido.sgg], [['12'], []]);
+  // 이름에 지역이 없는 출연기관은 같은 소관기관코드의 지자체에서 배워요
+  const rows = [
+    { ...govRow, 소관기관명: '경기도 부천시', 소관기관유형: '시군구', 소관기관코드: '3860000' },
+    { ...govRow, 서비스ID: '2', 소관기관명: '(재)부천산업진흥원', 소관기관유형: '지방출자_출연기관', 소관기관코드: '3860000' },
+  ];
+  const book = buildCodebook(rows, idx);
+  assert.deepEqual(normalizeGov24(rows[1], idx, book)!.sgg, ['41190']);
+  assert.equal(normalizeGov24(rows[1], idx), null);
 });
 
 test('정부 혜택: 신청기한 문장 읽기', () => {
   assert.equal(parseDeadline('상시신청').applyCode, 'always');
+  assert.equal(parseDeadline('관리주체가 매월 청구', '상시신청').applyCode, 'always');
+  assert.deepEqual(parseDeadline('20250901~20251001'), { applyStart: '2025-09-01', applyEnd: '2025-10-01', applyCode: 'period' });
+  assert.deepEqual(parseDeadline('20260105-20260120'), { applyStart: '2026-01-05', applyEnd: '2026-01-20', applyCode: 'period' });
+  assert.deepEqual(parseDeadline('2026. 3. 23.(월) 09:00 ~ 12. 11.(금) 18:00'), { applyStart: '2026-03-23', applyEnd: '2026-12-11', applyCode: 'period' });
+  assert.equal(parseDeadline('접수기관 별 상이').applyCode, null);
   assert.deepEqual(parseDeadline('2026년 3월 1일 ~ 2026년 3월 31일'), { applyStart: '2026-03-01', applyEnd: '2026-03-31', applyCode: 'period' });
   assert.equal(parseDeadline('2026.12.31까지').applyEnd, '2026-12-31');
   assert.equal(parseDeadline('예산 소진 시까지').applyCode, null);

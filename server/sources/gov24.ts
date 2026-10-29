@@ -17,31 +17,71 @@ const get = (r: any, ...keys: string[]) => {
   return '';
 };
 
-/** "2026.03.01 ~ 2026.03.31", "상시신청", "예산 소진 시까지" → 신청 기간 */
-export function parseDeadline(text: string): Pick<Policy, 'applyStart' | 'applyEnd' | 'applyCode'> {
+/** "2026.03.01 ~ 2026.03.31", "20250901~20251001", "2026. 3. 23.(월) ~ 12. 11.(금)", "상시신청" → 신청 기간 */
+export function parseDeadline(text: string, kind = ''): Pick<Policy, 'applyStart' | 'applyEnd' | 'applyCode'> {
   const t = text.replace(/\s+/g, ' ');
-  if (/상시/.test(t)) return { applyStart: null, applyEnd: null, applyCode: 'always' };
-  const dates = [...t.matchAll(/(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/g)].map(m => normalizeDate(`${m[1]}-${m[2]}-${m[3]}`)).filter((d): d is string => !!d);
+  if (/상시/.test(kind) || /상시/.test(t)) return { applyStart: null, applyEnd: null, applyCode: 'always' };
+  const full = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})|(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)/g;
+  const found = [...t.matchAll(full)].map(m => ({ at: m.index ?? 0, d: normalizeDate(m[1] ? `${m[1]}-${m[2]}-${m[3]}` : `${m[4]}-${m[5]}-${m[6]}`) }))
+    .filter((x): x is { at: number; d: string } => !!x.d);
+  const dates = found.map(x => x.d);
+  // 끝 날짜에 연도가 없으면("~ 12. 11.") 시작 연도를 써요.
+  if (dates.length === 1) {
+    const tilde = t.indexOf('~', found[0].at);
+    const m = tilde >= 0 ? t.slice(tilde).match(/~\s*(\d{1,2})\s*[.월]\s*(\d{1,2})/) : null;
+    if (m) {
+      const y = Number(dates[0].slice(0, 4));
+      let end = normalizeDate(`${y}-${m[1]}-${m[2]}`);
+      if (end && end < dates[0]) end = normalizeDate(`${y + 1}-${m[1]}-${m[2]}`);
+      if (end) dates.push(end);
+    }
+  }
   if (dates.length >= 2) return { applyStart: dates[0], applyEnd: dates[dates.length - 1], applyCode: 'period' };
   if (dates.length === 1) return /까지|마감|~/.test(t) ? { applyStart: null, applyEnd: dates[0], applyCode: 'period' } : { applyStart: dates[0], applyEnd: null, applyCode: 'period' };
   return { applyStart: null, applyEnd: null, applyCode: null };
 }
 
-/** 소관기관 유형·이름으로 지역을 정해요. 지자체인데 지역을 못 찾으면 null(목록에서 빼요). */
-export function regionOfAgency(type: string, name: string, dept: string, regions: RegionIndex): Pick<Policy, 'scope' | 'sido' | 'sgg'> | null {
-  const local = /지방|자치|시도|시군구|광역|기초/.test(type);
+type Region = Pick<Policy, 'scope' | 'sido' | 'sgg'>;
+
+/**
+ * 소관기관 유형·이름으로 지역을 정해요. 이름에 지역이 없는 지자체 출연기관("(재)부천산업진흥원")은
+ * 같은 소관기관코드를 쓰는 지자체 행에서 배운 지역(codebook)으로 정해요.
+ * 지자체 쪽인데 끝내 지역을 못 찾으면 null(잘못된 지역에 보이지 않게 목록에서 빼요).
+ */
+export function regionOfAgency(type: string, name: string, dept: string, regions: RegionIndex, code = '', codebook?: Map<string, Region>): Region | null {
+  const local = /지방|자치|시도|시군구|광역|기초|출자|출연|공기업/.test(type);
+  // 중앙부처·공공기관 서비스는 이름에 지명이 있어도("서울대학교병원") 전국으로 봐요.
+  if (!local && /중앙|공공기관/.test(type)) return { scope: 'national', sido: [], sgg: [] };
   const parsed = regions.parseAddress(name) ?? regions.parseAddress(`${name} ${dept}`.trim());
   if (parsed) return { scope: 'regional', sido: [parsed.sido.code], sgg: parsed.sgg && parsed.sido.sgg.length > 1 ? [parsed.sgg.code] : [] };
+  if (local && code && codebook?.has(code)) return codebook.get(code)!;
   return local ? null : { scope: 'national', sido: [], sgg: [] };
 }
 
-export function normalizeGov24(r: any, regions: RegionIndex): RawPolicy | null {
+/** 지자체 행(시군구·광역시도)의 소관기관코드 → 지역. 같은 코드가 여러 지역을 가리키면 쓰지 않아요. */
+export function buildCodebook(rows: any[], regions: RegionIndex): Map<string, Region> {
+  const votes = new Map<string, Map<string, Region>>();
+  for (const r of rows) {
+    if (!/시군구|광역시도/.test(get(r, '소관기관유형'))) continue;
+    const code = get(r, '소관기관코드');
+    const parsed = code ? regions.parseAddress(get(r, '소관기관명')) : null;
+    if (!parsed) continue;
+    const region: Region = { scope: 'regional', sido: [parsed.sido.code], sgg: parsed.sgg && parsed.sido.sgg.length > 1 ? [parsed.sgg.code] : [] };
+    if (!votes.has(code)) votes.set(code, new Map());
+    votes.get(code)!.set(JSON.stringify(region), region);
+  }
+  const book = new Map<string, Region>();
+  for (const [code, m] of votes) if (m.size === 1) book.set(code, [...m.values()][0]);
+  return book;
+}
+
+export function normalizeGov24(r: any, regions: RegionIndex, codebook?: Map<string, Region>): RawPolicy | null {
   const id = get(r, '서비스ID');
   const title = clip(get(r, '서비스명'), 120);
   if (!id || !title) return null;
   const users = get(r, '사용자구분');
   if (users && !/개인|가구/.test(users)) return null;
-  const region = regionOfAgency(get(r, '소관기관유형'), get(r, '소관기관명'), get(r, '부서명'), regions);
+  const region = regionOfAgency(get(r, '소관기관유형'), get(r, '소관기관명'), get(r, '부서명'), regions, get(r, '소관기관코드'), codebook);
   if (!region) return null;
   return {
     id: `g-${id}`,
@@ -54,7 +94,7 @@ export function normalizeGov24(r: any, regions: RegionIndex): RawPolicy | null {
     how: clip(get(r, '신청방법'), 300),
     field: toField(get(r, '서비스분야')),
     ...region,
-    ...parseDeadline(get(r, '신청기한')),
+    ...parseDeadline(get(r, '신청기한'), get(r, '신청기한유형')),
     ageMin: null,
     ageMax: null,
     views: Number(get(r, '조회수')) || 0,
@@ -68,8 +108,8 @@ export function gov24Source(serviceKey: string | undefined, fetchImpl: Fetch = f
     id: 'gov24',
     async fetchAll(regions, log = () => {}) {
       if (!serviceKey) throw new SourceError('no-key', 'DATA_GO_KR_API_KEY가 없어요.');
-      const out: RawPolicy[] = [];
-      let total = Infinity, skipped = 0;
+      const rows: any[] = [];
+      let total = Infinity;
       for (let page = 1; page <= MAX_PAGES && (page - 1) * PAGE_SIZE < total; page++) {
         const params = new URLSearchParams({ serviceKey, page: String(page), perPage: String(PAGE_SIZE), returnType: 'JSON' });
         const { status, json } = await fetchJson(fetchImpl, `${ENDPOINT}?${params}`);
@@ -77,10 +117,15 @@ export function gov24Source(serviceKey: string | undefined, fetchImpl: Fetch = f
         if (status >= 400 || !json) throw new SourceError('error', `공공서비스 응답 오류 HTTP ${status}`);
         const list: any[] = json.data ?? [];
         total = Number(json.totalCount ?? list.length);
-        for (const r of list) { const p = normalizeGov24(r, regions); if (p) out.push(p); else skipped++; }
+        rows.push(...list);
         if (list.length < PAGE_SIZE) break;
       }
-      log(`정부 혜택 ${out.length}건 (개인 대상이 아니거나 지역을 모르는 ${skipped}건 제외)`);
+      // 전체를 받은 뒤 지자체 행에서 소관기관코드 → 지역을 배워 출연기관 행에 써요.
+      const codebook = buildCodebook(rows, regions);
+      const out: RawPolicy[] = [];
+      let skipped = 0;
+      for (const r of rows) { const p = normalizeGov24(r, regions, codebook); if (p) out.push(p); else skipped++; }
+      log(`정부 혜택 ${out.length}건 (전체 ${rows.length}건 중 개인 대상이 아니거나 지역을 모르는 ${skipped}건 제외)`);
       if (out.length === 0) throw new SourceError('error', '공공서비스 정보를 받지 못했어요.');
       return out;
     },
