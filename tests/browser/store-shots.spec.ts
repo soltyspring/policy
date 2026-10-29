@@ -10,9 +10,9 @@ import { basename } from 'node:path';
 const out = (name: string) => `docs/store/${name}.png`;
 
 const SHOTS = [
-  { file: 'screenshot-1', title: '우리 동네 정책을<br>한곳에서 찾아요', sub: '청년정책과 정부 혜택을 지역별로 모았어요', align: 'top' },
-  { file: 'screenshot-2', title: '마감 임박순으로<br>놓치지 않아요', sub: '조회 많은순·최근 등록순·이름순도 있어요', align: 'top' },
-  { file: 'screenshot-3', title: '시·도와 시·군·구를<br>골라 봐요', sub: '2026년에 바뀐 행정구역까지 반영했어요', align: 'top' },
+  { file: 'screenshot-1', title: '우리 동네 정책을<br>한곳에서 찾아요', sub: '청년정책과 정부 혜택을 지역별로 모았어요' },
+  { file: 'screenshot-2', title: '마감 임박순으로<br>놓치지 않아요', sub: '조회 많은순·최근 등록순·이름순도 있어요' },
+  { file: 'screenshot-3', title: '시·도와 시·군·구를<br>골라 봐요', sub: '2026년에 바뀐 행정구역까지 반영했어요' },
 ] as const;
 
 const FONT = `'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif`;
@@ -44,9 +44,9 @@ async function captureScreens(page: Page) {
   return [home, list, region].map(b => `data:image/png;base64,${b.toString('base64')}`);
 }
 
-const phone = (src: string, width: number, cssExtra = '', screenHeight?: number, align: 'top' | 'bottom' = 'top') => `
+const phone = (src: string, width: number, cssExtra = '') => `
   <div class="phone" style="width:${width}px;${cssExtra}">
-    <div class="screen" style="${screenHeight ? `height:${screenHeight}px;` : ''}"><img src="${src}" style="${screenHeight ? `height:100%;object-fit:cover;object-position:center ${align};` : ''}"></div>
+    <div class="screen"><img src="${src}"></div>
   </div>`;
 
 const baseCss = `
@@ -92,7 +92,7 @@ test('콘솔 스크린샷 3장 (636×1048)', async ({ page, browser, baseURL }) 
         <div class="brand" style="font-size:22px;"><img src="${logo}" width="34" height="34">동네 정책 찾기</div>
         <h1 style="font-size:50px;margin-top:22px;">${s.title}</h1>
         <p style="font-size:24px;margin-top:16px;">${s.sub}</p>
-        ${s.align === 'bottom' ? phone(screens[i], 420, 'left:108px;top:340px;', 640, 'bottom') : phone(screens[i], 420, 'left:108px;top:340px;')}
+        ${phone(screens[i], 420, 'left:108px;top:340px;')}
       </div>`, out(s.file));
   }
 });
