@@ -6,6 +6,11 @@ test.beforeEach(async ({ page }) => {
 });
 const shot = (name: string, project: string) => `docs/screenshots/${project}-${name}.png`;
 const rows = (page: Page) => page.locator('.policy-row');
+/** 더보기를 끝까지 눌러 모든 정책을 펼쳐요. */
+async function showAll(page: Page) {
+  const more = page.getByRole('button', { name: /^더보기/ });
+  while (await more.count()) await more.click();
+}
 
 const regionBtn = (page: Page) => page.getByRole('button', { name: /^지역:/ });
 const regionSheet = (page: Page) => page.getByRole('dialog', { name: '지역 고르기' });
@@ -18,26 +23,26 @@ async function pickRegion(page: Page, sido: string, sgg: string) {
   await expect(sheet).toBeHidden();
 }
 
-test('홈: 지역을 고르지 않아도 전국 정책을 바로 보여 줘요, 목록은 최근 3개·더보기', async ({ page }, info) => {
+test('홈: 지역을 고르지 않아도 전국 정책을 바로 보여 줘요, 목록은 20개씩', async ({ page }, info) => {
   await page.goto('/?notify=0');
   await expect(regionBtn(page)).toHaveText('전국');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/전국에서\s*신청할 수 있는 정책 \d+개/);
   // 고르라고 재촉하는 문구나 꼭 필요하지 않은 안내 카드는 없어요
   await expect(page.getByText(/이렇게 모아요|친구가 있나요|한곳에 모았어요/)).toHaveCount(0);
   await expect(page.locator('main')).not.toContainText(/골라 주세요|선택해 주세요|알려 주세요/);
-  await expect(rows(page)).toHaveCount(3);
+  await expect(rows(page)).toHaveCount(20);
   const titles = await page.locator('.policy-texts strong').allInnerTexts();
   expect(new Set(titles).size).toBe(titles.length);
-  await expect(page.locator('main')).not.toContainText(/결제|이용권|광고/);
+  await expect(page.locator('main')).not.toContainText(/결제하기|구독|광고/); // 유료 기능 없음
   await expect(page.locator('.bottom-cta')).toHaveCount(0); // ?notify=0: 출시 화면엔 알림 버튼이 없어요
   await page.screenshot({ path: shot('home', info.project.name), fullPage: true, animations: 'disabled' });
   const more = page.getByRole('button', { name: /더보기 \(\d+개\)/ });
   await more.click();
-  expect(await rows(page).count()).toBeGreaterThan(3);
+  expect(await rows(page).count()).toBeGreaterThan(20);
   const all = await page.locator('.policy-texts strong').allInnerTexts();
   expect(new Set(all).size).toBe(all.length);
-  await page.getByRole('button', { name: '접기' }).click();
-  await expect(rows(page)).toHaveCount(3);
+  await page.getByRole('button', { name: '처음 20개만 보기' }).click();
+  await expect(rows(page)).toHaveCount(20);
 });
 
 test('지역: 버튼 하나 → 시·도 → 그 시·도의 시·군·구, 다시 열면 같은 시·도 목록부터', async ({ page }, info) => {
@@ -62,7 +67,7 @@ test('지역: 버튼 하나 → 시·도 → 그 시·도의 시·군·구, 다�
   await expect(regionBtn(page)).toHaveText('전남광주 북구');
   await expect(regionBtn(page)).toBeFocused(); // 시트를 닫으면 초점이 지역 버튼으로 돌아와요
   await page.screenshot({ path: shot('town', info.project.name), fullPage: true, animations: 'disabled' });
-  await page.getByRole('button', { name: /더보기/ }).click();
+  await showAll(page);
   for (const m of await page.locator('.policy-texts span').allInnerTexts()) expect(m).toMatch(/전국|전남광주/);
   // 우리 지역만: 전국 정책을 빼요
   await page.getByText('우리 지역만').click();
@@ -114,19 +119,17 @@ test('정렬과 조건', async ({ page }) => {
   await expect(rows(page).first()).toContainText('청년도약계좌');
   // 청년 대상만: 청년과 관계없는 혜택(첫만남이용권)은 빠져요
   const youth = page.getByText('청년 대상', { exact: true });
+  const row = (name: string) => page.locator('.policy-row', { hasText: name });
+  await showAll(page);
+  await expect(row('첫만남이용권')).toHaveCount(1);
   await youth.click();
-  await page.getByRole('button', { name: /더보기/ }).click();
-  await expect(page.locator('.policy-row', { hasText: '첫만남이용권' })).toHaveCount(0);
-  await youth.click();
-  await page.getByRole('button', { name: /더보기/ }).click();
-  await expect(page.locator('.policy-row', { hasText: '첫만남이용권' })).toHaveCount(1);
-  await page.getByRole('button', { name: '접기' }).click();
-  // 신청 가능한 것만을 풀면 마감된 정책도 보여요
-  await youth.click();
-  const more = page.getByRole('button', { name: /더보기 \(\d+개\)/ });
-  const before = await more.innerText();
+  await showAll(page);
+  await expect(row('첫만남이용권')).toHaveCount(0);
+  // 신청 가능을 풀면 마감된 정책(응시료 지원)도 보여요
+  await expect(row('응시료')).toHaveCount(0);
   await page.getByText('신청 가능', { exact: true }).click();
-  await expect(more).not.toHaveText(before);
+  await showAll(page);
+  await expect(row('응시료')).toHaveCount(1);
   await expect(page.getByRole('button', { name: /^정렬:/ })).toHaveText('조회 많은순');
   // 분야
   await page.getByRole('group', { name: '분야' }).getByRole('button', { name: '주거' }).click();

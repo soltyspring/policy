@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.ts';
 import { openStore } from '../server/store.ts';
-import { seedDemo, demoPolicies } from '../server/demo.ts';
+import { seedDemo, demoPolicies, extraDemoPolicies } from '../server/demo.ts';
 import { createTossClient, mockCaller, unavailableToss } from '../server/toss.ts';
 import { collectOnce } from '../server/collector.ts';
 import { createRegionIndex } from '../shared/regions.ts';
@@ -33,7 +33,7 @@ test('가벼운 목록 API: 지역별 한 번에, 칸 이름 없이 줄 배열, 
     const all = await s.call('/api/index');
     assert.equal(all.status, 200);
     const items = fromLiteRows(all.body.rows);
-    assert.equal(items.length, demoPolicies().length);
+    assert.equal(items.length, demoPolicies().length + extraDemoPolicies().length);
     assert.deepEqual(all.body.fields, [...LITE_FIELDS]);
     assert.ok(items.every(p => typeof p.youth === 'boolean' && !('benefit' in p)));
     const bukgu = fromLiteRows((await s.call('/api/index?sido=12&sgg=12300')).body.rows);
