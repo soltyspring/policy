@@ -69,6 +69,8 @@ npx ait deploy -m "<대표 커밋 메시지>"
 
 ## 배포 (BlueCL)
 
+현재 서버 릴리스 `policy-20261029000447`(2026-10-29 설치), 앱 번들 deploymentId `01a184fb-cbcb-7587-901d-275badc03cc0`.
+
 `/home/solty/dev/policy/{releases,current,node,data,.env}`, API 포트 `18826`, 공개 경로 `https://bluecl.cloud/policy/api/`. Node는 gongmodu와 같은 `node` 링크(v24)를 써요.
 
 업데이트: `server shared scripts tests deploy package*.json tsconfig.json`을 `releases/<rel>.tar.gz`로 올린 뒤 `bash current/deploy/release.sh <rel>`(처음엔 압축을 푼 폴더의 release.sh). 의존성 설치 → 서버 테스트 → `current` 교체 → `policy.service`만 재시작 → 상태 확인을 하고, 실패하면 이전 릴리스로 되돌려요.
