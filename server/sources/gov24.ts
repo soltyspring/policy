@@ -79,6 +79,8 @@ export function normalizeGov24(r: any, regions: RegionIndex, codebook?: Map<stri
   const id = get(r, '서비스ID');
   const title = clip(get(r, '서비스명'), 120);
   if (!id || !title) return null;
+  // 정부24 운영용 시험 항목은 빼요.
+  if (/시연\s*테스트|테스트\s*\(운영\)/.test(title)) return null;
   const users = get(r, '사용자구분');
   if (users && !/개인|가구/.test(users)) return null;
   const region = regionOfAgency(get(r, '소관기관유형'), get(r, '소관기관명'), get(r, '부서명'), regions, get(r, '소관기관코드'), codebook);
