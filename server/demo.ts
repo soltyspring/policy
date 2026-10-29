@@ -51,8 +51,22 @@ export function demoPolicies(today = kstDate()): RawPolicy[] {
   ];
 }
 
+/** 목록 더보기(20개씩)를 확인하려고 더하는 예시 정책 30개. 이름·기간·분야가 모두 달라요. */
+export function extraDemoPolicies(today = kstDate()): RawPolicy[] {
+  const day = (n: number) => kstDate(new Date(Date.parse(today) + n * 86400_000));
+  const fields = ['job', 'housing', 'education', 'welfare', 'health', 'culture'] as const;
+  const names = ['취업 준비', '주거 안정', '평생 학습', '생활 지원', '건강 검진', '문화 바우처'];
+  return Array.from({ length: 30 }, (_, i) => ({
+    id: `g-extra${i + 1}`, source: 'gov24' as const,
+    title: `${names[i % 6]} 지원 ${Math.floor(i / 6) + 1}차`, agency: i % 3 === 0 ? '전남광주통합특별시' : '보건복지부', field: fields[i % 6],
+    scope: i % 3 === 0 ? 'regional' as const : 'national' as const, sido: i % 3 === 0 ? ['12'] : [], sgg: [],
+    summary: '예시 정책이에요.', benefit: '', target: '', how: '', ageMin: null, ageMax: null,
+    applyStart: day(-10), applyEnd: day(10 + i), applyCode: 'period' as const, views: 100 * (30 - i), registeredAt: day(-20 - i), url: 'https://www.gov.kr',
+  }));
+}
+
 export function seedDemo(store: Store) {
-  const list = demoPolicies();
+  const list = [...demoPolicies(), ...extraDemoPolicies()];
   const checkedAt = new Date().toISOString();
   for (const source of ['youth', 'gov24'] as const) {
     const items = list.filter(p => p.source === source);

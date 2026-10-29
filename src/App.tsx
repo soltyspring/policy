@@ -11,7 +11,7 @@ import { connectNative, createAuthCode, haptic, isNativeToss, openExternal, requ
 
 /** 새 정책 알림 캠페인 발송 코드. 동의 화면을 띄울 때도 이 코드를 써요. */
 const NEW_TEMPLATE = import.meta.env.VITE_TOSS_NEW_TEMPLATE as string | undefined;
-const RECENT_LIMIT = 3;
+/** 처음에 보여 주는 개수와 더보기 한 번에 늘리는 개수. 목록은 기기에 있어서 바로 그려요. */
 const PAGE = 20;
 const REGION_KEY = 'policy:region:v1';
 
@@ -76,8 +76,8 @@ export default function App() {
   const [index, setIndex] = useState<RegionIndexData | null>(() => readCachedIndex(readPicked()));
   const [listError, setListError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  /** 펼쳤을 때 보이는 개수(0이면 접힘: 3개만) */
-  const [shown, setShown] = useState(0);
+  /** 지금 보이는 개수 */
+  const [shown, setShown] = useState(PAGE);
   const [sub, setSub] = useState<SubscriptionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -128,8 +128,8 @@ export default function App() {
     void loadIndex(ctrl.signal);
     return () => ctrl.abort();
   }, [loadIndex]);
-  // 조건이 바뀌면 다시 3개부터 보여 줘요.
-  useEffect(() => { setShown(0); }, [query]);
+  // 조건이 바뀌면 다시 20개부터 보여 줘요.
+  useEffect(() => { setShown(PAGE); }, [query]);
 
   const today = kstDate();
   const items = index?.key === regionKey ? index.items : index?.items ?? [];
@@ -197,7 +197,7 @@ export default function App() {
   }
 
   const total = view.sorted.length;
-  const visible = view.sorted.slice(0, shown || RECENT_LIMIT);
+  const visible = view.sorted.slice(0, shown);
   const titles = useMemo(() => uniqueTitles(visible, idx), [visible, idx]);
   const regionText = pickedLabel(picked, idx);
   const ready = !!index;
@@ -248,17 +248,14 @@ export default function App() {
           <ul className={`policy-list ${refreshing && index?.key !== regionKey ? 'is-stale' : ''}`} aria-busy={refreshing && index?.key !== regionKey}>
             {visible.map((p, i) => <PolicyRow key={p.id} policy={p} title={titles[i]} meta={metaLine(p, idx)} onOpen={() => setSheet({ type: 'policy', policy: p })} />)}
           </ul>
-          {total > RECENT_LIMIT && !shown && (
-            <button className="more-button" aria-expanded={false} onClick={() => setShown(PAGE)}>
-              더보기 ({(total - RECENT_LIMIT).toLocaleString('ko-KR')}개)<Down />
-            </button>
-          )}
-          {!!shown && (
+          {(shown < total || shown > PAGE) && (
             <div className="more-actions">
               {shown < total && (
-                <button className="more-button" onClick={() => setShown(n => n + PAGE)}>{Math.min(PAGE, total - shown)}개 더 보기</button>
+                <button className="more-button" onClick={() => setShown(n => n + PAGE)}>더보기 ({(total - shown).toLocaleString('ko-KR')}개)<Down /></button>
               )}
-              <button className="more-button weak" aria-expanded={true} onClick={() => setShown(0)}>접기<Down open /></button>
+              {shown > PAGE && (
+                <button className="more-button weak" onClick={() => { setShown(PAGE); document.querySelector('.list-card')?.scrollIntoView({ block: 'start' }); }}>처음 20개만 보기<Down open /></button>
+              )}
             </div>
           )}
         </section>
