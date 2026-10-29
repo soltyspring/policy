@@ -8,22 +8,23 @@ const shot = (name: string, project: string) => `docs/screenshots/${project}-${n
 const rows = (page: Page) => page.locator('.policy-row');
 
 async function pickRegion(page: Page, sido: string, sgg: string) {
-  await page.getByRole('button', { name: /시·도 목록에서 고르기|동네 바꾸기/ }).click();
-  const sheet = page.getByRole('dialog', { name: '지역 고르기' });
-  if (await sheet.getByRole('button', { name: '시·도 다시 고르기' }).count()) await sheet.getByRole('button', { name: '시·도 다시 고르기' }).click();
+  await page.getByRole('button', { name: /^시·도:/ }).click();
+  const sheet = page.getByRole('dialog', { name: '동네 고르기' });
   await sheet.getByRole('button', { name: sido, exact: true }).click();
   await sheet.getByRole('button', { name: sgg, exact: true }).click();
   await expect(sheet).toBeHidden();
 }
-const town = (page: Page) => page.locator('.town-name');
+const sidoBox = (page: Page) => page.getByRole('button', { name: /^시·도:/ });
+const sggBox = (page: Page) => page.getByRole('button', { name: /^시·군·구:/ });
 
-test('홈: 처음엔 동네 찾기가 첫 화면, 목록은 최근 3개·더보기', async ({ page }, info) => {
+test('홈: 처음엔 동네 고르기가 첫 화면, 목록은 최근 3개·더보기', async ({ page }, info) => {
   await page.goto('/?notify=0');
-  // 처음 열면 동네부터 물어봐요(제목·설명·입력창이 각각 다른 일)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('사는 동네를알려 주세요');
+  // 제목·설명·선택 칸이 각각 다른 일을 해요
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('사는 동네를골라 주세요');
   await expect(page.locator('.hero-sub')).toContainText(/전국 혜택 \d+개 중 우리 동네 것만/);
-  await expect(page.getByRole('searchbox', { name: '동네 찾기' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '시·도 목록에서 고르기' })).toBeVisible();
+  await expect(sidoBox(page)).toContainText('선택');
+  await expect(sggBox(page)).toContainText('선택');
+  await expect(page.getByRole('searchbox')).toHaveCount(0); // 입력창 없이 선택만
   await expect(rows(page)).toHaveCount(3);
   const titles = await page.locator('.policy-texts strong').allInnerTexts();
   expect(new Set(titles).size).toBe(titles.length);
@@ -39,50 +40,28 @@ test('홈: 처음엔 동네 찾기가 첫 화면, 목록은 최근 3개·더보�
   await expect(rows(page)).toHaveCount(3);
 });
 
-test('동네 찾기: 구 이름을 치면 바로 후보, 고르면 우리 동네 화면', async ({ page }, info) => {
+test('지역: 시·도를 고르면 바로 시·군·구 목록, 고르면 그 지역과 전국 정책만', async ({ page }, info) => {
   await page.goto('/?notify=0');
-  const box = page.getByRole('searchbox', { name: '동네 찾기' });
-  await box.fill('북구');
-  const results = page.locator('.finder-results button');
-  await expect(results.filter({ hasText: '전남광주 북구' })).toBeVisible();
-  expect(await results.count()).toBeGreaterThanOrEqual(4); // 부산·대구·울산·전남광주
-  await page.screenshot({ path: shot('finder', info.project.name), animations: 'disabled' });
-  await results.filter({ hasText: '전남광주 북구' }).first().click();
-  await expect(page.getByRole('status')).toHaveText('전남광주 북구 정책을 보여 드릴게요');
-  await expect(town(page)).toHaveText('전남광주 북구');
-  // 동네를 고른 뒤 첫 화면: 동네 / 개수 / 이번 주 새 정책
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
-  await expect(page.locator('.hero-sub')).toContainText('이번 주 새로 올라온 정책');
-  await expect(page.getByRole('searchbox', { name: '동네 찾기' })).toHaveCount(0);
-  await page.screenshot({ path: shot('town', info.project.name), fullPage: true, animations: 'disabled' });
-  await page.reload();
-  await expect(town(page)).toHaveText('전남광주 북구');
-});
-
-test('동네 찾기: 동 이름은 도로명주소로, 옛 이름(광주)도 지금 시·도로', async ({ page }) => {
-  await page.goto('/?notify=0');
-  const box = page.getByRole('searchbox', { name: '동네 찾기' });
-  await box.fill('광주');
-  await expect(page.locator('.finder-results button').first()).toContainText('전남광주 전체');
-  await box.fill('용봉동');
-  const hit = page.locator('.finder-results button', { hasText: '전남광주 북구 용봉동' });
-  await expect(hit).toBeVisible({ timeout: 10_000 });
-  await expect(hit).toContainText('주소에서 찾았어요');
-  await hit.click();
-  await expect(town(page)).toHaveText('전남광주 북구');
-});
-
-test('지역: 시·도 → 시·군·구 목록으로 고르면 그 지역과 전국 정책만', async ({ page }, info) => {
-  await page.goto('/?notify=0');
-  await page.getByRole('button', { name: '시·도 목록에서 고르기' }).click();
-  const sheet = page.getByRole('dialog', { name: '지역 고르기' });
+  // 시·군·구 칸을 먼저 눌러도 시·도부터 물어봐요
+  await sggBox(page).click();
+  const sheet = page.getByRole('dialog', { name: '동네 고르기' });
+  await expect(sheet.getByRole('heading', { name: '어느 시·도에 사세요?' })).toBeVisible();
   await expect(sheet.getByRole('button', { name: '전남광주', exact: true })).toBeVisible();
   await expect(sheet.getByRole('button', { name: '광주', exact: true })).toHaveCount(0); // 2026년 통합
   await page.screenshot({ path: shot('region', info.project.name), animations: 'disabled' });
   await sheet.getByRole('button', { name: '전남광주', exact: true }).click();
   await expect(sheet.getByRole('button', { name: '전남광주 전체', exact: true })).toBeFocused(); // 초점이 시·군·구 목록으로 가요
   await sheet.getByRole('button', { name: '북구', exact: true }).click();
-  await expect(town(page)).toHaveText('전남광주 북구');
+  await expect(page.getByRole('status')).toHaveText('전남광주 북구 정책을 보여 드릴게요');
+  await expect(sidoBox(page)).toContainText('전남광주');
+  await expect(sggBox(page)).toContainText('북구');
+  // 고른 뒤 첫 화면: 개수 / 이번 주 새 정책 / 동네
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/지금 신청할 수 있는\s*정책 \d+개/);
+  // 새 정책 수를 누르면 최근 등록순으로 바뀌어요
+  await page.getByRole('button', { name: /이번 주 새로 올라온 정책 \d+개/ }).click();
+  await expect(page.locator('#list-title')).toHaveText('새로 올라온 정책');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: shot('town', info.project.name), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: /더보기/ }).click();
   const meta = await page.locator('.policy-texts span').allInnerTexts();
   for (const m of meta) expect(m).toMatch(/전국|전남광주/);
@@ -91,11 +70,26 @@ test('지역: 시·도 → 시·군·구 목록으로 고르면 그 지역과 �
   await expect(page.locator('.policy-texts span').first()).not.toContainText('전국');
   const local = await page.locator('.policy-texts span').allInnerTexts();
   for (const m of local) expect(m).not.toMatch(/전국/);
-  // 동네 바꾸기 → 모든 지역으로 돌아가면 다시 동네 찾기 화면
-  await page.getByRole('button', { name: /동네 바꾸기/ }).click();
-  await sheet.getByRole('button', { name: '시·도 다시 고르기' }).click();
+  await page.getByText('우리 지역만').click();
+  // 시·군·구 칸은 그 시·도의 목록을 바로 열어요
+  await sggBox(page).click();
+  await expect(sheet.getByRole('heading', { name: '전남광주통합특별시' })).toBeVisible();
+  await sheet.getByRole('button', { name: '광산구', exact: true }).click();
+  await expect(sggBox(page)).toContainText('광산구');
+  await page.reload();
+  await expect(sggBox(page)).toContainText('광산구');
+  // 모든 지역으로 돌아가기
+  await sidoBox(page).click();
   await sheet.getByRole('button', { name: '모든 지역', exact: true }).click();
-  await expect(page.getByRole('searchbox', { name: '동네 찾기' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('사는 동네를골라 주세요');
+});
+
+test('지역: 세종은 시·군·구 없이 바로 골라져요', async ({ page }) => {
+  await page.goto('/?notify=0');
+  await sidoBox(page).click();
+  await page.getByRole('dialog', { name: '동네 고르기' }).getByRole('button', { name: '세종', exact: true }).click();
+  await expect(sggBox(page)).toContainText('세종시');
+  await expect(sggBox(page)).toBeDisabled();
 });
 
 test('정렬과 조건', async ({ page }) => {
@@ -106,19 +100,19 @@ test('정렬과 조건', async ({ page }) => {
   await expect(sheet).toBeHidden();
   await expect(rows(page).first()).toContainText('청년도약계좌');
   // 청년 대상만: 청년과 관계없는 혜택(첫만남이용권)은 빠져요
-  const target = page.getByRole('group', { name: '대상' });
-  await target.getByRole('button', { name: '청년 대상' }).click();
+  const youth = page.getByText('청년 대상', { exact: true });
+  await youth.click();
   await page.getByRole('button', { name: /더보기/ }).click();
   await expect(page.locator('.policy-row', { hasText: '첫만남이용권' })).toHaveCount(0);
-  await target.getByRole('button', { name: '모든 대상' }).click();
+  await youth.click();
   await page.getByRole('button', { name: /더보기/ }).click();
   await expect(page.locator('.policy-row', { hasText: '첫만남이용권' })).toHaveCount(1);
   await page.getByRole('button', { name: '접기' }).click();
   // 신청 가능한 것만을 풀면 마감된 정책도 보여요
-  await target.getByRole('button', { name: '청년 대상' }).click();
+  await youth.click();
   const more = page.getByRole('button', { name: /더보기 \(\d+개\)/ });
   const before = await more.innerText();
-  await page.getByText('신청 가능한 것만').click();
+  await page.getByText('신청 가능', { exact: true }).click();
   await expect(more).not.toHaveText(before);
   await expect(page.locator('#list-title')).toHaveText('많이 본 정책'); // 목록 제목은 개수 대신 정렬 기준
   // 분야

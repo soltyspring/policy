@@ -10,9 +10,9 @@ import { basename } from 'node:path';
 const out = (name: string) => `docs/store/${name}.png`;
 
 const SHOTS = [
-  { file: 'screenshot-1', title: '사는 동네만<br>입력하면 돼요', sub: '동 이름·도로명·구 이름으로 찾아요' },
+  { file: 'screenshot-1', title: '사는 동네만<br>고르면 돼요', sub: '시·도와 시·군·구, 두 번이면 끝나요' },
   { file: 'screenshot-2', title: '우리 동네 혜택을<br>마감 임박순으로', sub: '조회 많은순·최근 등록순·이름순도 있어요' },
-  { file: 'screenshot-3', title: '시·도와 시·군·구를<br>골라 봐요', sub: '2026년에 바뀐 행정구역까지 반영했어요' },
+  { file: 'screenshot-3', title: '2026년에 바뀐<br>행정구역까지', sub: '전남광주통합특별시와 새로 생긴 구도 있어요' },
 ] as const;
 
 const FONT = `'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif`;
@@ -21,30 +21,26 @@ async function captureScreens(page: Page) {
   await page.addInitScript(() => { if (!sessionStorage.getItem('cleared')) { localStorage.clear(); sessionStorage.setItem('cleared', '1'); } });
   await page.goto('/?notify=0');
   const opts = { animations: 'disabled' as const, type: 'png' as const };
-  // 1) 처음 화면: 동네 이름을 치면 바로 후보가 나와요
-  const box = page.getByRole('searchbox', { name: '동네 찾기' });
-  await box.fill('북구');
-  await expect(page.locator('.finder-results button', { hasText: '전남광주 북구' })).toBeVisible();
-  await page.locator('.finder').evaluate(el => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 260));
+  await expect(page.locator('.policy-row').first()).toBeVisible();
   await page.mouse.move(0, 0);
-  const finder = await page.screenshot(opts);
-  // 2) 동네를 고른 뒤 목록
-  await page.locator('.finder-results button', { hasText: '전남광주 북구' }).first().click();
-  await expect(page.locator('.town-name')).toHaveText('전남광주 북구');
-  await page.getByRole('button', { name: /더보기/ }).click();
-  await page.locator('.filters').evaluate(el => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 12));
-  await page.mouse.move(0, 0);
+  // 1) 처음 화면: 동네 고르기
+  const first = await page.screenshot(opts);
+  // 2) 동네를 고른 뒤 첫 화면
+  await page.getByRole('button', { name: /^시·도:/ }).click();
+  const sheet = page.getByRole('dialog', { name: '동네 고르기' });
+  await sheet.getByRole('button', { name: '전남광주', exact: true }).click();
+  await sheet.getByRole('button', { name: '북구', exact: true }).click();
+  await expect(sheet).toBeHidden();
   await page.waitForTimeout(3000); // 안내 메시지가 사라질 때까지
-  const list = await page.screenshot(opts);
+  await page.mouse.move(0, 0);
+  const home = await page.screenshot(opts);
   // 3) 시·군·구 목록
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.getByRole('button', { name: /동네 바꾸기/ }).click();
-  const sheet = page.getByRole('dialog', { name: '지역 고르기' });
+  await page.getByRole('button', { name: /^시·군·구:/ }).click();
   await expect(sheet.getByRole('button', { name: '북구', exact: true })).toBeVisible();
   await page.locator('.sheet-inner').evaluate(el => el.scrollTo(0, 0));
   await page.mouse.move(0, 0);
   const region = await page.screenshot(opts);
-  return [finder, list, region].map(b => `data:image/png;base64,${b.toString('base64')}`);
+  return [first, home, region].map(b => `data:image/png;base64,${b.toString('base64')}`);
 }
 const phone = (src: string, width: number, cssExtra = '') => `
   <div class="phone" style="width:${width}px;${cssExtra}">

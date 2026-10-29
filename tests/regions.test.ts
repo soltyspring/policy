@@ -35,22 +35,6 @@ test('옛 코드도 지금 지역으로 바꿔요', () => {
   assert.deepEqual(idx.resolveSgg('99999'), []);
 });
 
-test('동네 이름 검색(기기 안)', () => {
-  const titles = (q: string) => idx.searchRegions(q).map(r => `${r.sido.short} ${r.sgg?.name ?? '전체'}`);
-  assert.equal(titles('강남구')[0], '서울 강남구');
-  assert.equal(titles('강남')[0], '서울 강남구');
-  assert.equal(titles('수원')[0], '경기 수원시');
-  assert.equal(titles('장안구')[0], '경기 수원시'); // 일반구 이름으로도
-  assert.equal(idx.searchRegions('장안구')[0].gu, '장안구');
-  assert.ok(titles('북구').slice(0, 4).every(t => !t.includes('포항'))); // 진짜 "북구"가 일반구보다 먼저
-  assert.equal(titles('광주')[0], '전남광주 전체'); // 옛 이름은 지금 시·도로
-  assert.ok(titles('광주').includes('경기 광주시'));
-  assert.equal(titles('전남광주북구')[0], '전남광주 북구');
-  assert.ok(titles('북구').length >= 4);           // 부산·대구·울산·전남광주
-  assert.ok(titles('서해구').includes('인천 서해구'));
-  assert.deepEqual(titles('없는동네'), []);
-});
-
 test('주소에서 지역 찾기', () => {
   const a = idx.parseAddress('광주광역시 북구 용봉로 77')!;
   assert.equal(a.sido.code, '12'); assert.equal(a.sgg?.name, '북구');
