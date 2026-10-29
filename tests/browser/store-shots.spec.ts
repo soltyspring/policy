@@ -3,7 +3,7 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import { basename } from 'node:path';
 
 /**
- * 앱인토스 콘솔 업로드용 스크린샷 636×1048 PNG 3장: 설명 문구 + 휴대폰 틀 안의 실제 앱 화면.
+ * 앱인토스 콘솔 업로드용 스크린샷: 세로 636×1048 PNG 3장(설명 문구 + 휴대폰 틀 안의 실제 앱 화면)과 가로 1504×741 PNG 1장.
  * `npm run shots`, 그리고 `npm run build` 때마다 docs/store/ 에 덮어써요.
  * 출시 화면과 같게 알림 버튼은 숨겨요(?notify=0).
  */
@@ -43,9 +43,9 @@ async function captureScreens(page: Page) {
   const home = await page.screenshot(opts);
   return [first, region, home].map(b => `data:image/png;base64,${b.toString('base64')}`);
 }
-const phone = (src: string, width: number, cssExtra = '') => `
+const phone = (src: string, width: number, cssExtra = '', screenHeight?: number) => `
   <div class="phone" style="width:${width}px;${cssExtra}">
-    <div class="screen"><img src="${src}"></div>
+    <div class="screen" style="${screenHeight ? `height:${screenHeight}px;` : ''}"><img src="${src}" style="${screenHeight ? 'height:100%;object-fit:cover;object-position:center top;' : ''}"></div>
   </div>`;
 
 const baseCss = `
@@ -82,7 +82,7 @@ async function render(browser: Browser, width: number, height: number, html: str
   }
 }
 
-test('콘솔 스크린샷 3장 (636×1048)', async ({ page, browser, baseURL }) => {
+test('콘솔 스크린샷 (세로 3장 636×1048 + 가로 1장 1504×741)', async ({ page, browser, baseURL }) => {
   const screens = await captureScreens(page);
   const logo = `${baseURL}/logo.png`;
   for (const [i, s] of SHOTS.entries()) {
@@ -94,4 +94,17 @@ test('콘솔 스크린샷 3장 (636×1048)', async ({ page, browser, baseURL }) 
         ${phone(screens[i], 420, 'left:108px;top:340px;')}
       </div>`, out(s.file));
   }
+
+  // 가로형 1504×741: 왼쪽에 앱 이름과 한 줄 설명, 오른쪽에 화면 3개(tibo와 같은 틀)
+  await render(browser, 1504, 741, `
+    <div class="canvas" style="width:1504px;height:741px;background:linear-gradient(120deg,#eaf3ff 0%,#f6f9ff 60%,#ffffff 100%);">
+      <div style="position:absolute;left:88px;top:50%;transform:translateY(-50%);width:540px;">
+        <div class="brand" style="font-size:24px;"><img src="${logo}" width="40" height="40">동네 정책 찾기</div>
+        <h1 style="font-size:56px;margin-top:24px;">우리 동네 혜택,<br>마감 전에 챙겨요</h1>
+        <p style="font-size:26px;margin-top:20px;">정부·지자체 혜택을 지역별로 모아 보여 드려요</p>
+      </div>
+      ${phone(screens[0], 250, 'left:650px;top:110px;', 500)}
+      ${phone(screens[1], 250, 'left:928px;top:80px;', 500)}
+      ${phone(screens[2], 250, 'left:1206px;top:110px;', 500)}
+    </div>`, out('screenshot-wide'));
 });
