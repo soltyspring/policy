@@ -45,6 +45,8 @@ export default function App() {
   const [source, setSource] = useState<Source | undefined>();
   const [field, setField] = useState<Field | undefined>();
   const [openOnly, setOpenOnly] = useState(true);
+  /** 지역을 골랐을 때 전국 정책을 빼고 볼지 */
+  const [localOnly, setLocalOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>('deadline');
   const [list, setList] = useState<ListResponse | null>(null);
   const [listError, setListError] = useState(false);
@@ -59,7 +61,7 @@ export default function App() {
   sheetRef.current = sheet;
 
   const notifyOn = !!config?.notify && !forceNotifyOff;
-  const query = useMemo(() => ({ sido: picked.sido ?? undefined, sgg: picked.sgg ?? undefined, source, field, open: openOnly, sort }), [picked, source, field, openOnly, sort]);
+  const query = useMemo(() => ({ sido: picked.sido ?? undefined, sgg: picked.sgg ?? undefined, source, field, open: openOnly, national: !(picked.sido && localOnly), sort }), [picked, source, field, openOnly, localOnly, sort]);
 
   const showToast = useCallback((text: string) => { setToast(text); window.setTimeout(() => setToast(t => (t === text ? null : t)), 2800); }, []);
 
@@ -178,7 +180,7 @@ export default function App() {
   const regionText = pickedLabel(picked, idx);
   const noData = !!list && list.total === 0 && list.sources.every(s => s.state !== 'ok');
   const subscribed = !!sub?.subscribed;
-  const resetFilters = () => { setSource(undefined); setField(undefined); setOpenOnly(false); };
+  const resetFilters = () => { setSource(undefined); setField(undefined); setOpenOnly(false); setLocalOnly(false); };
 
   return (
     <div className={`app ${notifyOn ? 'has-cta' : ''}`}>
@@ -219,10 +221,18 @@ export default function App() {
             {FIELDS.map(f => <button key={f} aria-pressed={field === f} className={field === f ? 'on' : ''} onClick={() => setField(field === f ? undefined : f)}>{FIELD_LABELS[f]}</button>)}
           </div>
           <div className="filter-row">
-            <label className="check-chip">
-              <input type="checkbox" checked={openOnly} onChange={e => setOpenOnly(e.target.checked)} />
-              <span className="box" aria-hidden="true"><Check /></span>신청 가능한 것만
-            </label>
+            <span className="checks">
+              <label className="check-chip">
+                <input type="checkbox" checked={openOnly} onChange={e => setOpenOnly(e.target.checked)} />
+                <span className="box" aria-hidden="true"><Check /></span>신청 가능한 것만
+              </label>
+              {picked.sido && (
+                <label className="check-chip">
+                  <input type="checkbox" checked={localOnly} onChange={e => setLocalOnly(e.target.checked)} />
+                  <span className="box" aria-hidden="true"><Check /></span>우리 지역만
+                </label>
+              )}
+            </span>
             <button className="sort-button" onClick={() => setSheet({ type: 'sort' })} aria-label={`정렬: ${SORT_LABELS[sort]}. 바꾸기`}>
               {SORT_LABELS[sort]}<Down />
             </button>
