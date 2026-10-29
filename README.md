@@ -77,7 +77,7 @@ npx ait deploy -m "<대표 커밋 메시지>"
 
 ## 배포 (BlueCL)
 
-현재 서버 릴리스 `policy-20261029014842`(2026-10-29 설치), 앱 번들 deploymentId `01a1856e-7415-716d-9b3a-e576abd5bf74`. 정부 혜택 9,933건 수집 중(온통청년은 운영 승인 대기).
+현재 서버 릴리스 `policy-20261029014842`(2026-10-29 설치), 앱 번들 deploymentId `01a18571-c156-7622-9173-ea7dcb9987fd`. 정부 혜택 9,933건 수집 중(온통청년은 운영 승인 대기).
 
 `/home/solty/dev/policy/{releases,current,node,data,.env}`, API 포트 `18826`, 공개 경로 `https://bluecl.cloud/policy/api/`. Node는 gongmodu와 같은 `node` 링크(v24)를 써요.
 
